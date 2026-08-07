@@ -14,9 +14,11 @@ checked at its joints instead of only at its ends.
 | port → Spain | 7 | 311.4M | 1569–1812 |
 | port → Havana (rendezvous) | 3 | 156.6M | 1630–1801 |
 
-A further **413.7M pesos** arrives at the hubs from an origin the flow parser
-could not name. That is larger than every named district put together, and it is
-excluded from the arithmetic rather than distributed across the named ones.
+A further **413.7M pesos** arrives at the hubs from an origin **the ledgers never
+record**. That is larger than every named district put together, and it is
+excluded from the arithmetic rather than distributed across the named ones. See
+"Why so much origin is unnamed" below — it is a property of the source, not of
+the parse.
 
 Havana is kept separate from Spain deliberately. It was the fleet rendezvous,
 not a destination — folding it into "to Spain" would count the same silver
@@ -107,11 +109,53 @@ royal treasury account, plus treasuries the Colmex sample does not cover. It
 measures coverage, not leakage. The same warning applies to
 `atlantic_despatch_vs_arrival.csv`.
 
-## Open
+## Why so much origin is unnamed
 
-- `unspecified` at 413.7M is the single biggest improvement available here:
-  it is larger than all named districts combined, and much of it is probably
-  resolvable from the account text the flow parser discarded.
+Across the whole network, **39.4% of all flow value has no named counterparty**.
+That is not a parsing gap. Two account headings account for nearly all of it:
+
+| heading | meaning | lines | pesos |
+|---|---|---|---|
+| `OTRAS TESORERIAS` | "other treasuries" | 1,212 | 589.2M |
+| `VENIDO DE FUERA` | "come from outside" | 360 | 291.0M |
+
+These are the complete account names as written. The clerk booked a lump sum
+under a generic category; the counterparty was never itemized. `build_flows.py`
+matches both patterns deliberately — dropping them would silently discard 39% of
+the network's value, so they are carried with an honest `unspecified` label
+instead.
+
+**They are terminal lines, not headings over detail.** In the same Lima books in
+the 1780s, the outbound side names every recipient — `SITUADO DE PANAMA`
+1,979,617, `SITUADO DE VALDIVIA` 371,737, `SITUADO DE CHILOE` 174,612 — while
+the inbound side records `VENIDO DE FUERA` 6,404,594 and `OTRAS TESORERIAS`
+3,649,811 against no one at all. The clerk could itemize. On revenue, they
+chose not to.
+
+That asymmetry is systematic:
+
+| direction | value unnamed | lines named : unnamed |
+|---|---|---|
+| revenue (in) | **61.1%** | 917 : 1,002 |
+| expenditure (out) | 22.8% | 4,496 : 653 |
+
+Expenditure was itemized nearly seven to one by line count; revenue barely half.
+The reason is what the accounts were *for*. A treasurer had to show that money
+paid out went where it was ordered — a garrison's situado is a discharge of a
+specific obligation and must name it. Money coming in only had to total
+correctly. Provenance was the sender's problem.
+
+It also concentrates where you would expect: **Lima 302.6M and Mexico City
+223.1M**, the two hubs receiving from dozens of treasuries at once, and heavily
+after 1750 (632.6M of the 882.2M), as Bourbon accounting consolidated detail
+into summary categories.
+
+**This is therefore not recoverable from the Colmex workbooks.** Closing it means
+the individual cajas' own remission records in the AGI and national archives —
+matching a hub's lump-sum receipt against the sending treasuries' despatch
+entries, year by year. That is archival work, not parsing.
+
+## Open
 - The Potosí → Lima 20:1 discrepancy is unexplained and worth a look at the
   underlying account lines before either figure is used.
 - Bolaños' silver tax is almost certainly under an unclassified account.
