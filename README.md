@@ -40,6 +40,22 @@ Built from the Colmex digitization of the TePaske/Klein royal treasury books —
 | `colmex_mining_annual.csv` | mining revenue classified silver / gold / mercury |
 | `atlantic_despatch_vs_arrival.csv` | metal despatched to Spain against metal recorded arriving |
 
+### Gold routes — `data/routes/`
+
+Mining district -> mint -> American port, with each link labelled by the
+evidence supporting it. Route-level, not parcel-level: no source here follows a
+consignment from a placer to a hold.
+
+| file | contents |
+|---|---|
+| `gold_routes.csv` | 11 mint->port edges, with years, assumed share, evidence class |
+| `gold_port_annual.csv` | value laded by American port and year, crown/private |
+| `port_gold_ratio_test.csv` | the test that decides which ports were gold ports |
+
+The origin and mint layers this builds on are TePaske production data and are
+therefore not published here — `src/gold_routes.py` regenerates them for anyone
+with the book. See `docs/gold-routes.md`.
+
 ## Findings
 
 **Hamilton's post-1630 collapse is mostly a measurement artifact.** His
@@ -66,6 +82,24 @@ Chile 25M, Panama 21M, Buenos Aires 14M, Valdivia 12M, Louisiana 10M, Manila
 10M. The dates are as telling as the amounts — Manila's subsidy appears only
 from 1789 and Louisiana's only after 1779, both late acquisitions bolted onto an
 existing fiscal machine.
+
+**Cartagena was a gold port and Veracruz was not.** The ship appendix records
+pesos per vessel, not gold pesos, and of 7,068 treasury transfer edges exactly
+one names a metal — so metal composition has to be earned from the region
+upstream. Against the gold struck at the mint feeding it, Cartagena's outbound
+value is 0.82 and tracks it (decade r = 0.67); Veracruz's is 8.01 and does not
+(r = 0.11). New Granadan silver was 4% of its gold by value, so value leaving
+Cartagena is gold to within that margin and the route holds end to end. Veracruz
+shipped silver, and the Mexican gold inside it cannot be separated out by these
+sources. The series also carries the War of Jenkins' Ear unprompted: Cartagena
+runs 6.5M pesos in 1738, near zero 1741–47, then 10.4M in 1750 as the backlog
+clears.
+
+**New Granada is missing from the fiscal layer entirely.** The largest gold
+region in Spanish America — 320 tonnes fine — has no caja among the 71 in
+`colmex_flows.csv`. Production, mintage and port are all present; the treasury
+movement record in between is absent for exactly the region where it would
+matter most.
 
 **Beware circular joins.** Where the production literature had no independent
 output figure, one was derived from tax receipts at an assumed rate. Joining

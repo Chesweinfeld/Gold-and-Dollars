@@ -1,0 +1,12 @@
+mint,port,year_from,year_to,assumed_share,evidence,basis
+Santa Fe de Bogota,Cartagena,1621,1810,0.7,ship,Magdalena down from Honda; Cartagena is the only Atlantic outlet
+Santa Fe de Bogota,Portobelo,1621,1739,0.3,ship,"galeones leg, ends with the 1739 suspension of the fleet"
+Popayan,Cartagena,1758,1810,0.6,ship,"Cauca valley gold, minted Popayan, shipped Cartagena"
+Popayan,Callao (Lima),1758,1810,0.4,inferred,Pacific leg via Buenaventura/Guayaquil; no series measures the split
+Mexico City,Veracruz,1733,1810,0.95,ship,sole legal Atlantic port for New Spain
+Mexico City,Acapulco,1733,1810,0.05,fiscal,Manila galleon; Acapulco is a caja in colmex_flows
+Lima,Portobelo,1696,1739,0.6,ship,"Callao-Portobelo-galeones, the pre-1739 route"
+Lima,Buenos Aires,1740,1821,0.5,ship,Cape Horn register ships after the galeones lapse
+Potosi,Buenos Aires,1778,1810,0.8,fiscal,Rio de la Plata viceroyalty 1776 redirects Upper Peru
+Santiago de Chile,Buenos Aires,1756,1810,0.6,fiscal,overland to Mendoza; Chile-Buenos Aires edges exist in colmex_flows
+Guatemala,Honduras,1733,1810,0.9,ship,Golfo Dulce / Omoa; tiny volumes throughout
