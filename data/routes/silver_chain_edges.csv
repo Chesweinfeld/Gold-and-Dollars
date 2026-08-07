@@ -1,0 +1,63 @@
+origin,dest,side,n,pesos,year_from,year_to,pesos_low_side,agreement,leg
+unspecified,Lima,receiver,323,302187709.12,1580,1820,,,district_to_hub
+unspecified,Mexico City,receiver,30,111487581.0,1786,1816,,,district_to_hub
+Potosi,Lima,sender,57,50119810.69,1587,1774,2318238.71,0.046,district_to_hub
+GUANAJUATO,Mexico City,sender,113,42456629.0,1665,1796,,,district_to_hub
+ZACATECAS,Mexico City,sender,400,39820798.0,1587,1800,,,district_to_hub
+DURANGO,Mexico City,sender,169,28058441.0,1600,1813,,,district_to_hub
+GUADALAJARA,Mexico City,sender,226,24904104.0,1584,1792,,,district_to_hub
+PACHUCA,Mexico City,sender,140,23823678.0,1667,1806,,,district_to_hub
+ORURO,Lima,sender,92,17562315.69,1609,1767,,,district_to_hub
+SANLUISPOTOSI,Mexico City,sender,139,15069397.0,1528,1785,,,district_to_hub
+BOLAÑOS,Mexico City,sender,51,9529952.0,1753,1804,,,district_to_hub
+ROSARIO,Mexico City,sender,29,8109128.0,1770,1809,,,district_to_hub
+SOMBRERETE,Mexico City,sender,106,6715703.0,1688,1814,,,district_to_hub
+AREQUIPA,Lima,sender,99,4631171.99,1599,1836,,,district_to_hub
+ZIMAPAN,Mexico City,sender,92,4285837.0,1729,1806,,,district_to_hub
+CUZCO,Lima,sender,39,4272414.98,1607,1798,,,district_to_hub
+LA PAZ,Lima,sender,79,3837144.06,1624,1773,,,district_to_hub
+CAILLOMA,Lima,sender,75,3564470.86,1631,1778,,,district_to_hub
+CHUCUITO,Lima,sender,50,3445828.86,1658,1774,,,district_to_hub
+VICO Y PASCO,Lima,sender,75,2548492.81,1670,1786,,,district_to_hub
+TRUJILLO,Lima,sender,57,2227848.12,1601,1786,,,district_to_hub
+Acapulco,Mexico City,sender,30,1932193.0,1703,1795,,,district_to_hub
+CASTROVIRREYNA,Lima,sender,20,1899156.09,1600,1651,,,district_to_hub
+CHIHUAHA,Mexico City,sender,14,1588921.0,1789,1810,,,district_to_hub
+CHIHUAHUA,Mexico City,sender,14,1588921.0,1789,1810,,,district_to_hub
+HUANCAVELICA,Lima,sender,30,1526040.0,1739,1780,,,district_to_hub
+CARANGAS,Lima,sender,49,982587.49,1652,1776,,,district_to_hub
+CARABAYA,Lima,sender,34,891704.0,1722,1776,,,district_to_hub
+PIURA Y PAITA,Lima,sender,35,607601.38,1606,1779,,,district_to_hub
+Manila,Mexico City,receiver,17,507359.0,1790,1816,,,district_to_hub
+JAUJA,Lima,sender,41,489415.0,1730,1784,,,district_to_hub
+Internal presidios,Mexico City,receiver,8,424784.0,1793,1804,,,district_to_hub
+ARICA,Lima,sender,23,422555.0,1759,1786,,,district_to_hub
+Guayaquil,Lima,sender,10,212863.0,1726,1803,,,district_to_hub
+SAÑA,Lima,sender,35,190497.0,1726,1776,,,district_to_hub
+Guatemala,Mexico City,receiver,3,146254.0,1807,1814,,,district_to_hub
+Chile,Lima,receiver,44,129241.06,1605,1669,,,district_to_hub
+SAN JUAN DE MATUCANA,Lima,sender,8,95890.0,1721,1728,,,district_to_hub
+TABASCO,Mexico City,sender,6,36193.0,1605,1778,,,district_to_hub
+Durango,Mexico City,receiver,1,30775.0,1653,1653,,,district_to_hub
+Havana,Mexico City,receiver,2,22966.0,1652,1795,,,district_to_hub
+LOJA Y CUENCA,Lima,sender,2,11524.0,1725,1725,,,district_to_hub
+Valdivia,Lima,receiver,1,5000.0,1789,1789,,,district_to_hub
+ARISPE,Mexico City,sender,2,3398.0,1790,1807,,,district_to_hub
+Veracruz,Mexico City,sender,1,2727.0,1711,1711,,,district_to_hub
+Isla del Carmen,Mexico City,receiver,3,464.0,1793,1795,,,district_to_hub
+Puerto Rico,Mexico City,receiver,1,450.0,1796,1796,,,district_to_hub
+Chiloe,Lima,receiver,2,155.0,1787,1789,,,district_to_hub
+Mexico City,Veracruz,receiver,115,292531505.0,1606,1792,,,hub_to_port
+Mexico City,Acapulco,receiver,153,29529467.0,1590,1806,,,hub_to_port
+Lima,Panama,sender,96,20831127.6,1675,1809,,,hub_to_port
+Lima,Guayaquil,receiver,2,28469.0,1756,1767,,,hub_to_port
+Veracruz,Havana,sender,82,150461841.0,1630,1801,,,port_to_havana
+Mexico City,Havana,sender,4,6103953.0,1658,1797,,,port_to_havana
+CAMPECHE,Havana,sender,1,8763.0,1783,1783,,,port_to_havana
+Veracruz,Spain,sender,320,158145345.0,1569,1801,,,port_to_spain
+Lima,Spain,sender,166,113120529.81,1591,1812,,,port_to_spain
+Mexico City,Spain,sender,54,39084920.0,1576,1640,,,port_to_spain
+MERIDA,Spain,sender,52,906319.0,1609,1681,,,port_to_spain
+QUITO,Spain,sender,7,92453.0,1719,1754,,,port_to_spain
+Acapulco,Spain,sender,1,63361.0,1679,1679,,,port_to_spain
+ORURO,Spain,sender,1,666.73,1706,1706,,,port_to_spain

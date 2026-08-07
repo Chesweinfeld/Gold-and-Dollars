@@ -51,10 +51,14 @@ consignment from a placer to a hold.
 | `gold_routes.csv` | 11 mint->port edges, with years, assumed share, evidence class |
 | `gold_port_annual.csv` | value laded by American port and year, crown/private |
 | `port_gold_ratio_test.csv` | the test that decides which ports were gold ports |
+| `silver_chain_edges.csv` | the silver chain, per edge, with which side's books recorded it |
+| `silver_hop1_remittance_test.csv` | silver tax against silver output, clean vs derived caja-years |
+| `veracruz_despatch_vs_ships.csv` | Veracruz despatch beside vessels arriving from Veracruz |
 
 The origin and mint layers this builds on are TePaske production data and are
 therefore not published here — `src/gold_routes.py` regenerates them for anyone
-with the book. See `docs/gold-routes.md`.
+with the book. See `docs/gold-routes.md` and `docs/silver-routes.md` — silver
+completes the chain gold could not, because its treasury transfers exist.
 
 ## Findings
 
@@ -100,6 +104,22 @@ region in Spanish America — 320 tonnes fine — has no caja among the 71 in
 `colmex_flows.csv`. Production, mintage and port are all present; the treasury
 movement record in between is absent for exactly the region where it would
 matter most.
+
+**The treasury books are single-sided.** A transfer should be booked twice, by
+sender and receiver. Of the 46 named district->hub edges, exactly one is. Mexico
+City records 20.8M pesos sent to Veracruz; Veracruz records 292.5M received —
+reading the sender side alone loses 93% of the empire's largest silver artery.
+Potosi records 50.1M sent to Lima against Lima's 2.3M received, a factor of
+twenty the other way. `silver_chain_edges.csv` reports which side recorded each
+edge. This also qualifies the Veracruz finding below: 366M in against 389M out is
+a *node* balance, not a matched pair of books.
+
+**The circularity constant is empire-wide.** Silver tax over silver output should
+vary by district. On caja-years recorded independently it does, spreading 0.039
+to 0.233. On the years derived from receipts the cross-district IQR is 3.8x
+tighter and **13 of 21 districts sit within one point of 0.1135** — Zacatecas
+0.1109, Guadalajara 0.1123, Zimapan 0.1123, Carangas 0.1130, Huancavelica
+0.1135. Different centuries, different viceroyalties, same number.
 
 **Beware circular joins.** Where the production literature had no independent
 output figure, one was derived from tax receipts at an assumed rate. Joining
