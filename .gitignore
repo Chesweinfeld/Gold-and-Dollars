@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+# source PDFs are not ours to redistribute
+*.pdf
+*.zip
+.DS_Store
