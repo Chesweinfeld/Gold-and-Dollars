@@ -1,0 +1,61 @@
+name: Publish the reserve currency map
+
+# Serves site/ on GitHub Pages. Deliberately not the "deploy from a branch"
+# setting: that would serve either the repository root or docs/, and docs/ here
+# holds the project's analysis notes, not a website.
+#
+# One-time setup: Settings -> Pages -> Source: "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the site has its data
+        run: |
+          set -e
+          for f in site/index.html site/assets/app.js site/assets/style.css \
+                   site/data/world.json site/data/holders.json site/data/cofer.json; do
+            test -s "$f" || { echo "missing or empty: $f"; exit 1; }
+          done
+          python3 - <<'PY'
+          import json, sys
+          for name in ("world", "holders", "cofer"):
+              with open(f"site/data/{name}.json") as fh:
+                  json.load(fh)
+          print("all three data files parse")
+          PY
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Reserve Currency Map</title>
+<meta name="description" content="Where the world's official reserves are held, and what currency they are held in — IMF COFER and World Bank data, 1960 to 2026.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow">Gold and Dollars</p>
+    <h1>The Reserve Currency Map</h1>
+    <p class="standfirst">
+      Every central bank holds a pile of someone else's money. This is where those
+      piles sit, how they moved east over sixty-five years, and which currencies
+      they are denominated in — from the two institutions that actually measure it.
+    </p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ─────────────────────────────  MAP  ───────────────────────────── -->
+  <section class="panel" id="map-section">
+    <div class="panel-head">
+      <h2>Where the reserves are held</h2>
+      <p class="dek">
+        One circle per country, area proportional to the reserves it holds.
+        The <span class="ink-track">orange track</span> is the centre of gravity of
+        the world's reserves — every holder treated as a point mass at its own
+        centroid, averaged on the sphere. It starts in the mid-Atlantic and ends
+        in Central Asia.
+      </p>
+    </div>
+
+    <div class="controls" role="group" aria-label="Map controls">
+      <div class="control">
+        <label for="measure">Measure</label>
+        <select id="measure">
+          <option value="total" selected>All reserves, incl. gold</option>
+          <option value="fx">Foreign exchange only</option>
+          <option value="gold">Gold only, at market value</option>
+        </select>
+      </div>
+      <div class="control grow">
+        <label for="year">Year <output id="year-out">2024</output></label>
+        <div class="slider-row">
+          <button id="play" class="btn-play" aria-label="Play the years">
+            <span class="play-icon" aria-hidden="true"></span><span id="play-label">Play</span>
+          </button>
+          <input type="range" id="year" min="1960" max="2025" step="1" value="2024">
+        </div>
+      </div>
+    </div>
+
+    <p class="provisional" id="provisional" hidden>
+      2025 is still filling in — <span id="prov-count"></span> of 182 reporters have
+      filed. The circles are real; the track for this year is not comparable with
+      the complete ones behind it.
+    </p>
+
+    <figure class="figure">
+      <svg id="map" viewBox="-272 -138 544 222" role="img" aria-labelledby="map-title">
+        <title id="map-title">World map of official reserve holdings by country</title>
+        <g id="graticule"></g>
+        <g id="land"></g>
+        <g id="track-line"></g>
+        <g id="bubbles"></g>
+        <g id="issuers"></g>
+        <g id="track-head"></g>
+      </svg>
+      <div id="tip" class="tip" hidden></div>
+    </figure>
+
+    <div class="legend-row">
+      <div class="legend" id="size-legend" aria-label="Circle size legend"></div>
+      <div class="legend keys">
+        <span class="key"><span class="swatch sw-bubble"></span>Reserves held</span>
+        <span class="key"><span class="swatch sw-track"></span>Centre of gravity</span>
+        <span class="key"><span class="swatch sw-issuer"></span>Reserve-currency issuer</span>
+      </div>
+    </div>
+
+    <div class="readout" id="readout"></div>
+
+    <details class="table-view">
+      <summary>Table view — largest holders this year</summary>
+      <div class="table-scroll"><table id="holders-table"></table></div>
+    </details>
+  </section>
+
+  <!-- ────────────────────────────  COFER  ──────────────────────────── -->
+  <section class="panel" id="cofer-section">
+    <div class="panel-head">
+      <h2>What those reserves are made of</h2>
+      <p class="dek">
+        Share of world allocated foreign exchange reserves, by currency. The dollar
+        has lost about fourteen points since 1999 and no single currency has taken
+        them — the gains are spread across the euro's rivals, the smaller reserve
+        currencies and the renminbi.
+      </p>
+    </div>
+
+    <figure class="figure">
+      <svg id="cofer" viewBox="0 0 900 440" role="img" aria-labelledby="cofer-title">
+        <title id="cofer-title">Stacked area chart of reserve currency shares, 1995 to 2026</title>
+      </svg>
+      <div id="cofer-tip" class="tip" hidden></div>
+    </figure>
+
+    <div class="legend" id="cofer-legend" aria-label="Currency legend"></div>
+
+    <details class="table-view">
+      <summary>Table view — currency shares by year</summary>
+      <div class="table-scroll"><table id="cofer-table"></table></div>
+    </details>
+  </section>
+
+  <!-- ────────────────────────────  LIMITS  ─────────────────────────── -->
+  <section class="panel prose">
+    <h2>What these two maps cannot be joined into</h2>
+    <p>
+      The obvious next question — <em>which</em> countries hold dollars, and which
+      hold euros — has no published answer, and the gap is deliberate. The IMF
+      collects COFER on the explicit condition that individual countries are never
+      identified, because a handful of holders are large enough that a country
+      breakdown would effectively publish their reserve managers' positions. So the
+      first chart is <strong>who holds, never in what</strong>, and the second is
+      <strong>in what, never who</strong>.
+    </p>
+    <p>
+      Anyone drawing arrows from issuers to holders on a map like this is inventing
+      them. There are no arrows here for that reason.
+    </p>
+    <h3>Three more things worth knowing before reading too much into it</h3>
+    <ul>
+      <li>
+        <strong>Gold is valued at market.</strong> A country's gold line moves with
+        the gold price even when it has not touched an ounce. The gold measure here
+        is a value, never a quantity.
+      </li>
+      <li>
+        <strong>The euro band before 1999 is its predecessors</strong> — the
+        Deutsche mark, French franc, Netherlands guilder and European currency
+        unit, which COFER identified separately until they were replaced. Stacking
+        them into the euro band shows the continuity; it is a construction, and the
+        seam is marked on the chart.
+      </li>
+      <li>
+        <strong>Shares are of allocated reserves.</strong> Before 2000 a large slice
+        of world reserves was unallocated — held by countries that did not report a
+        currency breakdown — so early shares describe only the reporting subset. In
+        December 2025 the IMF removed the unallocated portion entirely and revised
+        back to 2000Q1, which is why the series now accounts for the whole.
+      </li>
+    </ul>
+  </section>
+
+  <!-- ────────────────────────────  SOURCES  ────────────────────────── -->
+  <section class="panel prose" id="sources">
+    <h2>Sources</h2>
+    <table class="src">
+      <thead><tr><th>Data</th><th>Source</th><th>Coverage</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Currency composition</td>
+          <td><a href="https://data.imf.org/en/datasets/IMF.STA:COFER">IMF COFER</a></td>
+          <td id="src-cofer">—</td>
+        </tr>
+        <tr>
+          <td>Reserves by country</td>
+          <td><a href="https://data.worldbank.org/indicator/FI.RES.TOTL.CD">World Bank <code>FI.RES.TOTL.CD</code> and <code>FI.RES.XGLD.CD</code></a></td>
+          <td id="src-wb">—</td>
+        </tr>
+        <tr>
+          <td>Basemap</td>
+          <td><a href="https://www.naturalearthdata.com/">Natural Earth 1:110m</a>, public domain</td>
+          <td>177 countries, simplified to 78&nbsp;KB</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="fine">
+      Every figure on this page is rebuilt from those sources by the scripts in
+      <code>src/reserves/</code>, each of which prints its own validation report and
+      refuses to write output that fails. The country totals and the IMF world total
+      are compiled independently and agree to within 6% in every year they overlap.
+    </p>
+    <p class="fine">
+      Part of <a href="https://github.com/Chesweinfeld/Gold-and-Dollars">Gold and
+      Dollars</a>, which is otherwise about the silver that did this job in the
+      seventeenth century.
+    </p>
+  </section>
+
+</main>
+
+<footer class="wrap foot">
+  <p>Built from IMF and World Bank data. Code MIT; data carries the rights of its sources.</p>
+</footer>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

@@ -60,6 +60,22 @@ therefore not published here — `src/gold_routes.py` regenerates them for anyon
 with the book. See `docs/gold-routes.md` and `docs/silver-routes.md` — silver
 completes the chain gold could not, because its treasury transfers exist.
 
+### The modern reserve currency map — `site/`, `data/reserves/`
+
+A published website doing for today's reserve money what the rest of this
+repository does for silver: where the world's official reserves sit, how the
+centre of that mass moved 110° east between 1960 and 2024, and what currency
+the reserves are denominated in.
+
+| file | contents |
+|---|---|
+| `data/reserves/cofer_currency_shares.csv` | IMF COFER — world reserve shares by currency, 1995–2026Q1, including the pre-euro DEM, FRF, NLG and ECU |
+| `data/reserves/reserves_by_country.csv` | World Bank — reserves per country per year, 1960–2025, gold separable |
+| `site/` | the page itself; no frameworks, no CDN, no third-party code at runtime |
+
+`src/reserves/` rebuilds all of it from two public APIs. See
+`docs/reserve-currency-map.md`.
+
 ## Findings
 
 **Hamilton's post-1630 collapse is mostly a measurement artifact.** His
@@ -130,6 +146,15 @@ receipts, those derived figures scatter five times more widely than
 independently recorded ones (permutation test p = 0.0004). See
 `docs/circularity-test.md`.
 
+**The modern record has the same hole as the colonial one.** The IMF publishes
+what currency the world's reserves are held in; the World Bank publishes who
+holds reserves. Neither publishes both, and COFER is collected on the explicit
+condition that no country is ever identified. So the modern data supports a map
+of holders and a chart of currencies and *no* link between them — the same
+single-sidedness that loses 93% of the Mexico City→Veracruz silver artery.
+Meanwhile the two sources, compiled independently, agree on the world total to
+within 6% in every one of the 31 years they overlap.
+
 ## What is deliberately not here
 
 The production series — every quantitative table from TePaske, *A New World of
@@ -154,6 +179,9 @@ join.
 | Sousa, *e-JPH* 6(1), 2008 | open access |
 | Colmex *Real Hacienda* treasury books | public download |
 | TePaske, Brill 2010 | in copyright — **code only, no data** |
+| IMF COFER | public API — © IMF, redistributed under its terms of use |
+| World Bank development indicators | public API — **CC-BY 4.0** |
+| Natural Earth 1:110m | **public domain** |
 
 Full citations:
 

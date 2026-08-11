@@ -1,0 +1,402 @@
+/* The Reserve Currency Map — no frameworks, no webfonts, no third-party code.
+   Colours come from the project data-viz palette; every series colour is set
+   here rather than in JS so light/dark switches without a re-render. */
+
+:root {
+  color-scheme: light;
+
+  --surface-1:   #fcfcfb;
+  --plane:       #f9f9f7;
+  --ink:         #0b0b0b;
+  --ink-2:       #52514e;
+  --ink-muted:   #898781;
+  --grid:        #e1e0d9;
+  --axis:        #c3c2b7;
+  --hairline:    rgba(11, 11, 11, 0.10);
+
+  /* categorical slots, in the validated order */
+  --s1: #2a78d6;  /* USD   */
+  --s2: #eb6834;  /* EUR / the centre-of-gravity track */
+  --s3: #1baf7a;  /* JPY   */
+  --s4: #eda100;  /* GBP   */
+  --s5: #e87ba4;  /* CNY   */
+  --s6: #008300;  /* CAD   */
+  --s7: #4a3aa7;  /* AUD   */
+  --s-other: #b4b2aa;
+
+  --land:        #ececE6;
+  --land-edge:   #dcdbd3;
+  --bubble:      #2a78d6;
+  --bubble-fill: rgba(42, 120, 214, 0.42);
+
+  --radius: 10px;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --plane:     #0d0d0d;
+    --ink:       #ffffff;
+    --ink-2:     #c3c2b7;
+    --ink-muted: #898781;
+    --grid:      #2c2c2a;
+    --axis:      #383835;
+    --hairline:  rgba(255, 255, 255, 0.10);
+
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --s5: #d55181;
+    --s6: #008300;
+    --s7: #9085e9;
+    --s-other: #6d6b65;
+
+    --land:        #26262a;
+    --land-edge:   #34343a;
+    --bubble:      #3987e5;
+    --bubble-fill: rgba(57, 135, 229, 0.40);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { width: min(1100px, 100% - 2.5rem); margin-inline: auto; }
+
+/* ── masthead ─────────────────────────────────────────────────────── */
+
+.masthead { padding: 3.5rem 0 2rem; }
+.eyebrow {
+  margin: 0 0 .35rem;
+  font-size: .78rem;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.masthead h1 {
+  margin: 0 0 .6rem;
+  font-size: clamp(2rem, 5.5vw, 3.1rem);
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+}
+.standfirst {
+  margin: 0;
+  max-width: 62ch;
+  font-size: clamp(1rem, 1.9vw, 1.16rem);
+  color: var(--ink-2);
+}
+
+/* ── panels ───────────────────────────────────────────────────────── */
+
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 1.6rem clamp(1rem, 2.5vw, 1.75rem) 1.4rem;
+  margin-bottom: 1.75rem;
+}
+.panel-head h2, .prose h2 {
+  margin: 0 0 .4rem;
+  font-size: clamp(1.25rem, 2.6vw, 1.6rem);
+  letter-spacing: -0.01em;
+}
+.dek { margin: 0 0 1.1rem; max-width: 68ch; color: var(--ink-2); font-size: .95rem; }
+.ink-track { color: var(--s2); font-weight: 600; }
+
+/* ── controls: one row above everything they scope ────────────────── */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  align-items: flex-end;
+  padding-bottom: 1rem;
+  margin-bottom: .5rem;
+  border-bottom: 1px solid var(--grid);
+}
+.control { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+.control.grow { flex: 1 1 320px; }
+.control label {
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.control output { color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+select {
+  font: inherit;
+  font-size: .92rem;
+  color: var(--ink);
+  background: var(--surface-1);
+  border: 1px solid var(--axis);
+  border-radius: 7px;
+  padding: .4rem 2rem .4rem .6rem;
+  min-height: 38px;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-2) 50%),
+                    linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 17px, calc(100% - 10px) 17px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.slider-row { display: flex; align-items: center; gap: .75rem; }
+
+.btn-play {
+  font: inherit;
+  font-size: .85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  min-height: 38px;
+  padding: 0 .85rem;
+  color: var(--ink);
+  background: var(--surface-1);
+  border: 1px solid var(--axis);
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-play:hover { background: var(--plane); }
+.play-icon {
+  width: 0; height: 0;
+  border-left: 8px solid currentColor;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+.btn-play[data-state="playing"] .play-icon {
+  width: 8px; height: 10px;
+  border: 0;
+  background: currentColor;
+  clip-path: polygon(0 0, 35% 0, 35% 100%, 0 100%, 0 0, 65% 0, 100% 0, 100% 100%, 65% 100%, 65% 0);
+}
+
+input[type="range"] {
+  flex: 1;
+  min-width: 140px;
+  height: 34px;
+  accent-color: var(--s1);
+  background: transparent;
+}
+
+.provisional {
+  margin: .85rem 0 0;
+  padding: .6rem .8rem;
+  font-size: .85rem;
+  color: var(--ink-2);
+  background: var(--plane);
+  border-left: 3px solid var(--s4);
+  border-radius: 0 6px 6px 0;
+}
+
+/* ── figures ──────────────────────────────────────────────────────── */
+
+.figure { margin: 1rem 0 .75rem; position: relative; }
+.figure svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+#graticule path { fill: none; stroke: var(--grid); stroke-width: .35; }
+#land path {
+  fill: var(--land);
+  stroke: var(--land-edge);
+  stroke-width: .3;
+  stroke-linejoin: round;
+}
+
+.bubble {
+  fill: var(--bubble-fill);
+  stroke: var(--bubble);
+  stroke-width: .6;
+  /* the 2px surface ring that keeps overlapping marks legible */
+  paint-order: stroke;
+}
+.bubble.is-hot { stroke-width: 1.4; }
+.hit { fill: transparent; cursor: pointer; }
+
+.track { fill: none; stroke: var(--s2); stroke-width: 1.1; stroke-linecap: round; }
+.track.past { opacity: 1; }
+.track.future { opacity: .22; stroke-dasharray: 2 2.5; }
+.track-dot { fill: var(--s2); stroke: var(--surface-1); stroke-width: 1.2; }
+.track-label {
+  fill: var(--s2);
+  font-size: 6px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: var(--surface-1);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+.issuer { fill: none; stroke: var(--ink); stroke-width: .9; opacity: .75; }
+.issuer-label {
+  fill: var(--ink-2);
+  font-size: 5.2px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  paint-order: stroke;
+  stroke: var(--surface-1);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* ── tooltip ──────────────────────────────────────────────────────── */
+
+.tip {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+  min-width: 148px;
+  max-width: 260px;
+  padding: .55rem .7rem;
+  font-size: .82rem;
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .16);
+  transform: translate(-50%, -100%);
+}
+.tip b { display: block; margin-bottom: .15rem; }
+.tip .num { font-variant-numeric: tabular-nums; }
+.tip .row { display: flex; justify-content: space-between; gap: 1rem; color: var(--ink-2); }
+.tip .row span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ── legends ──────────────────────────────────────────────────────── */
+
+.legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: .4rem;
+}
+.legend { display: flex; flex-wrap: wrap; gap: .5rem 1.1rem; align-items: center; font-size: .8rem; color: var(--ink-2); }
+.key { display: inline-flex; align-items: center; gap: .4rem; }
+.swatch { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.sw-bubble { background: var(--bubble-fill); border: 1px solid var(--bubble); }
+.sw-track  { background: var(--s2); }
+.sw-issuer { background: transparent; border: 1.5px solid var(--ink); opacity: .75; border-radius: 2px; transform: rotate(45deg); }
+.legend svg { display: inline-block; width: auto; height: auto; vertical-align: middle; overflow: visible; }
+/* Beats .ax-text, whose 11px would be 11 *viewBox units* here — the size legend
+   is drawn at the same units-per-pixel as the map so its circles stay truthful,
+   which makes any inherited chart font enormous. */
+.legend svg text { font-size: 5px; fill: var(--ink-muted); }
+.legend-cap { color: var(--ink-muted); }
+#size-legend { gap: .5rem .8rem; }
+
+#cofer-legend { padding-top: .5rem; }
+.key .chip { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+/* series colours, referenced by class from JS-built markup */
+.c-USD   { background: var(--s1); }  .f-USD   { fill: var(--s1); }
+.c-EUR   { background: var(--s2); }  .f-EUR   { fill: var(--s2); }
+.c-JPY   { background: var(--s3); }  .f-JPY   { fill: var(--s3); }
+.c-GBP   { background: var(--s4); }  .f-GBP   { fill: var(--s4); }
+.c-CNY   { background: var(--s5); }  .f-CNY   { fill: var(--s5); }
+.c-CAD   { background: var(--s6); }  .f-CAD   { fill: var(--s6); }
+.c-AUD   { background: var(--s7); }  .f-AUD   { fill: var(--s7); }
+.c-OTH   { background: var(--s-other); } .f-OTH { fill: var(--s-other); }
+
+/* ── readout ──────────────────────────────────────────────────────── */
+
+.readout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .9rem 1.5rem;
+  padding: 1rem 0 .25rem;
+  border-top: 1px solid var(--grid);
+  margin-top: .6rem;
+}
+.stat dt {
+  font-size: .74rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: .15rem;
+}
+.stat dd { margin: 0; font-size: 1.3rem; line-height: 1.15; font-weight: 600; letter-spacing: -0.01em; }
+.stat .sub { display: block; font-size: .8rem; font-weight: 400; color: var(--ink-2); margin-top: .1rem; }
+
+/* ── chart chrome ─────────────────────────────────────────────────── */
+
+.ax-line { stroke: var(--axis); stroke-width: 1; fill: none; }
+.ax-grid { stroke: var(--grid); stroke-width: 1; fill: none; }
+.ax-text { fill: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ax-title { fill: var(--ink-2); font-size: 11px; }
+.band { stroke: var(--surface-1); stroke-width: 2; stroke-linejoin: round; }
+.band-label {
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--ink);
+  paint-order: stroke;
+  stroke: var(--surface-1);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+/* The annotation rule is a pointer, not a gridline, so dashing is meaningful
+   here — it marks a change in the measurement rather than in the data. */
+.annot { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 2 4; opacity: .6; }
+.annot-text {
+  fill: var(--ink-2);
+  font-size: 10.5px;
+  paint-order: stroke;
+  stroke: var(--surface-1);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.crosshair { stroke: var(--ink); stroke-width: 1; opacity: .45; }
+
+/* ── table view ───────────────────────────────────────────────────── */
+
+.table-view { margin-top: 1.1rem; border-top: 1px solid var(--grid); padding-top: .8rem; }
+.table-view summary {
+  cursor: pointer;
+  font-size: .85rem;
+  color: var(--ink-2);
+  padding: .2rem 0;
+}
+.table-view summary:hover { color: var(--ink); }
+.table-scroll { overflow-x: auto; margin-top: .7rem; }
+table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+th, td { text-align: left; padding: .35rem .7rem .35rem 0; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--ink-muted); font-weight: 600; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── prose ────────────────────────────────────────────────────────── */
+
+.prose p, .prose li { max-width: 72ch; color: var(--ink-2); }
+.prose h3 { margin: 1.5rem 0 .5rem; font-size: 1.02rem; color: var(--ink); }
+.prose strong { color: var(--ink); }
+.prose ul { padding-left: 1.1rem; }
+.prose li { margin-bottom: .55rem; }
+.prose a { color: var(--s1); text-underline-offset: 2px; }
+.src th, .src td { padding: .45rem .9rem .45rem 0; vertical-align: top; white-space: normal; }
+.fine { font-size: .85rem; color: var(--ink-muted); }
+.fine a { color: inherit; }
+code { font-size: .88em; background: var(--plane); padding: .1em .35em; border-radius: 4px; }
+
+.foot { padding: 1.5rem 0 3rem; color: var(--ink-muted); font-size: .82rem; }
+
+@media (max-width: 640px) {
+  .masthead { padding: 2.5rem 0 1.25rem; }
+  .panel { padding: 1.2rem .9rem 1.1rem; }
+  .readout { grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); }
+  .stat dd { font-size: 1.12rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
