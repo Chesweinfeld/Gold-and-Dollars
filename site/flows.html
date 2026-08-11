@@ -46,6 +46,13 @@
         record of <em>custody</em>, not ownership, which is why Belgium and the
         Cayman Islands sit so high.
       </p>
+      <p class="dek">
+        Each line is the great circle between the two, bowed a little so that
+        twenty of them converging on one point stay countable. On this
+        north-polar map that is close to the way round the world you would
+        actually go: Tokyo's line to Washington crosses the Arctic, because
+        that is the short way.
+      </p>
     </div>
 
     <div class="controls" role="group" aria-label="Treasury holdings controls">
@@ -68,9 +75,9 @@
       </div>
     </div>
 
-    <figure class="figure">
-      <svg id="tic-map" viewBox="-272 -138 544 222" role="img" aria-labelledby="tic-title">
-        <title id="tic-title">Arcs from each foreign holder of US Treasury securities to the United States</title>
+    <figure class="figure globe">
+      <svg id="tic-map" viewBox="-215 -215 430 430" role="img" aria-labelledby="tic-title">
+        <title id="tic-title">Great-circle arcs from each foreign holder of US Treasury securities to the United States, on a north-polar projection</title>
         <g id="tic-grat" class="grat"></g>
         <g id="tic-land" class="land"></g>
         <g id="tic-arcs"></g>
@@ -142,9 +149,9 @@
       </div>
     </div>
 
-    <figure class="figure">
-      <svg id="bis-map" viewBox="-272 -138 544 222" role="img" aria-labelledby="bis-title">
-        <title id="bis-title">Net position of the international banking system with each country, by currency of denomination</title>
+    <figure class="figure globe">
+      <svg id="bis-map" viewBox="-215 -215 430 430" role="img" aria-labelledby="bis-title">
+        <title id="bis-title">Net position of the international banking system with each country, by currency of denomination, on a north-polar projection</title>
         <defs>
           <!-- markerUnits=userSpaceOnUse so the head stays one size while the
                shaft width carries the amount -->
@@ -225,6 +232,17 @@
       position is a small fraction of that. Gross would put the United Kingdom
       second in the world and mean almost nothing by it.
     </p>
+    <h3>The map is looking down on the North Pole</h3>
+    <p>
+      Which is why the lines run the way they do. The shortest path from Tokyo
+      to Washington crosses the Arctic; on a rectangular map that arc has to
+      leave one edge and re-enter at the other, or be drawn as a curve across
+      the Pacific that is not the route. Here it is one short line over the top,
+      and Washington, Frankfurt, Beijing and Tokyo read as one neighbourhood
+      rather than as the four corners of a page. The projection is equal-area,
+      so a country's share of the map is its share of the Earth; shape is what
+      pays for it, smearing towards the rim, which is the South Pole.
+    </p>
     <h3>Coverage is not constant</h3>
     <p>
       Until 2016 Treasury published "Caribbean Banking Centers" and "Oil
@@ -268,6 +286,7 @@
   <p>Built from US Treasury and BIS data. Code MIT; data carries the rights of its sources.</p>
 </footer>
 
+<script src="assets/projection.js"></script>
 <script src="assets/flows.js"></script>
 </body>
 </html>

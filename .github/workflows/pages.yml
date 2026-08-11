@@ -34,6 +34,7 @@ jobs:
         run: |
           set -e
           for f in site/index.html site/flows.html \
+                   site/assets/projection.js \
                    site/assets/app.js site/assets/flows.js site/assets/style.css \
                    site/data/world.json site/data/holders.json \
                    site/data/cofer.json site/data/flows.json; do

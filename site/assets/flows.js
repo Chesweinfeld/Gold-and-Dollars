@@ -7,38 +7,12 @@
  * most of the design.
  */
 
+/* The projection, the SVG helper, the basemap and arcPath come from
+ * projection.js, which both pages share so the two maps stay identical. */
+
 'use strict';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-/* ── projection: identical to the holdings map so countries line up ── */
-
-const ROB_X = [1.0000, 0.9986, 0.9954, 0.9900, 0.9822, 0.9730, 0.9600, 0.9427,
-               0.9216, 0.8962, 0.8679, 0.8350, 0.7986, 0.7597, 0.7186, 0.6732,
-               0.6213, 0.5722, 0.5322];
-const ROB_Y = [0.0000, 0.0620, 0.1240, 0.1860, 0.2480, 0.3100, 0.3720, 0.4340,
-               0.4958, 0.5571, 0.6176, 0.6769, 0.7346, 0.7903, 0.8435, 0.8936,
-               0.9394, 0.9761, 1.0000];
-const R = 100;
-
-function project(lon, lat) {
-  const a = Math.min(Math.abs(lat), 90);
-  const i = Math.min(Math.floor(a / 5), 17);
-  const t = (a - i * 5) / 5;
-  const x = ROB_X[i] + (ROB_X[i + 1] - ROB_X[i]) * t;
-  const y = ROB_Y[i] + (ROB_Y[i + 1] - ROB_Y[i]) * t;
-  return [0.8487 * R * x * (lon * Math.PI / 180),
-          -1.3523 * R * y * (lat < 0 ? -1 : 1)];
-}
-
 const el = (id) => document.getElementById(id);
-
-function svg(tag, attrs, parent) {
-  const n = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
-  if (parent) parent.appendChild(n);
-  return n;
-}
 
 /* Net positions are signed, so the sign goes outside the currency symbol —
    "−$200bn", not "$-200bn" — with a real minus rather than a hyphen. */
@@ -59,49 +33,8 @@ function monthLabel(p) {
   return `${MONTHS[+m - 1]} ${y}`;
 }
 
-/* An arc from a to b, bowed perpendicular to its own chord. Great circles would
- * be more correct on a globe and less readable on a flat map — with 50 arcs
- * converging on one point, a consistent bow is what keeps them separable. */
-function arcPath(from, to, bow) {
-  const [x1, y1] = project(from[0], from[1]);
-  const [x2, y2] = project(to[0], to[1]);
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const len = Math.hypot(dx, dy) || 1;
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  // Perpendicular offset, always bowing the same way round the sphere.
-  const k = bow * Math.min(len * 0.28, 46);
-  const cx = mx - (dy / len) * k;
-  const cy = my + (dx / len) * k;
-  return `M${x1} ${y1}Q${cx} ${cy} ${x2} ${y2}`;
-}
-
 let W = null;
 let F = null;
-
-function drawBase(gratId, landId) {
-  const g = el(gratId);
-  for (let lat = -60; lat <= 80; lat += 20) {
-    const pts = [];
-    for (let lon = -180; lon <= 180; lon += 5) pts.push(project(lon, lat));
-    svg('path', { d: 'M' + pts.map((p) => p.join(' ')).join('L') }, g);
-  }
-  for (let lon = -180; lon <= 180; lon += 30) {
-    const pts = [];
-    for (let lat = -60; lat <= 84; lat += 4) pts.push(project(lon, lat));
-    svg('path', { d: 'M' + pts.map((p) => p.join(' ')).join('L') }, g);
-  }
-  const land = el(landId);
-  for (const c of W.countries) {
-    if (c.id === 'ATA') continue;
-    let d = '';
-    for (const ring of c.r) {
-      d += 'M' + ring.map((p) => project(p[0], p[1]).join(' ')).join('L') + 'Z';
-    }
-    svg('path', { d }, land);
-  }
-}
 
 /* ── shared tooltip plumbing ──────────────────────────────────────── */
 
@@ -157,11 +90,13 @@ function drawTic() {
   tic.nodes = [];
 
   const target = F.tic.target;
-  // Thin arcs on top of thick ones, so a small holder stays hoverable.
+  // Thin arcs on top of thick ones, so a small holder stays hoverable. Each
+  // stops on the edge of the target dot rather than under it, so twenty arcs
+  // converging on Kansas stay countable.
   for (const { h, v } of [...shown].reverse()) {
     const w = Math.max(0.35, Math.sqrt(v / max) * 3.4);
     svg('path', {
-      d: arcPath(h.c, target.c, 1),
+      d: arcPath(h.c, target.c, 1, 4.4),
       class: 'arc', 'stroke-width': w.toFixed(2),
     }, arcs);
   }
@@ -217,6 +152,12 @@ function ticLegend() {
 const bis = { i: 0, cur: 'ALL', playing: false, timer: null, nodes: [] };
 const CUR_ORDER = ['USD', 'EUR', 'JPY'];
 
+/* Radius of a country's mark, needed before the arcs are drawn so each
+ * arrowhead knows how far short of the circle to stop. */
+function nodeR(v, max) {
+  return Math.max(0.8, Math.sqrt(Math.abs(v) / max) * 4.6);
+}
+
 function drawBis() {
   const i = bis.i;
   const list = bis.cur === 'ALL' ? CUR_ORDER : [bis.cur];
@@ -238,7 +179,7 @@ function drawBis() {
   nodes.textContent = '';
   bis.nodes = [];
 
-  for (const { c } of [...shown].reverse()) {
+  for (const { c, v: net } of [...shown].reverse()) {
     for (const k of list) {
       const v = c[k][i];
       if (!v) continue;
@@ -248,10 +189,13 @@ function drawBis() {
       // The arrow points at whoever owes. Positive net means the banking
       // system's claims on the country exceed its liabilities to it, so the
       // obligation runs towards the country; negative reverses the arrow.
+      // Either way the head stops on the edge of the mark it points at — the
+      // whole reading of this layer is which end the arrowhead is on.
       const owes = v > 0;
       const w = Math.max(0.25, Math.sqrt(Math.abs(v) / max) * 2.8);
       svg('path', {
-        d: owes ? arcPath(home.c, c.c, 1) : arcPath(c.c, home.c, -1),
+        d: owes ? arcPath(home.c, c.c, 1, nodeR(net, max) + 1.2)
+                : arcPath(c.c, home.c, -1, 4.8),
         class: 'arc cur-' + k,
         'stroke-width': w.toFixed(2),
         'marker-end': `url(#ah-${k})`,
@@ -261,7 +205,7 @@ function drawBis() {
 
   for (const { c, v } of shown) {
     const [x, y] = project(c.c[0], c.c[1]);
-    const r = Math.max(0.8, Math.sqrt(Math.abs(v) / max) * 4.6);
+    const r = nodeR(v, max);
     svg('circle', {
       cx: x, cy: y, r,
       class: 'node ' + (v > 0 ? 'is-debtor' : 'is-creditor'),
@@ -369,8 +313,8 @@ async function main() {
   ]);
   W = world; F = flows;
 
-  drawBase('tic-grat', 'tic-land');
-  drawBase('bis-grat', 'bis-land');
+  drawBasemap(el('tic-grat'), el('tic-land'), W);
+  drawBasemap(el('bis-grat'), el('bis-land'), W);
 
   tic.i = F.tic.periods.length - 1;
   bis.i = F.bis.periods.length - 1;

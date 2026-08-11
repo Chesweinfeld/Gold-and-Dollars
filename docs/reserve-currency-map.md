@@ -156,6 +156,52 @@ site marks any year whose panel is materially incomplete. 2025 is currently
 partial — 124 of 182 reporters — and is flagged in the interface rather than
 quietly plotted.
 
+## The projection
+
+All three maps are drawn looking straight down on the North Pole, in a Lambert
+azimuthal equal-area projection. `site/assets/projection.js` is the whole of it,
+shared by both pages so a country lands in the same place on each.
+
+The reason is the subject. Every reserve currency except the Australian dollar
+is issued north of the tropics, as is every one of the twenty largest holders,
+and a rectangular map splits that single neighbourhood across two edges: Tokyo
+and New York are the full width of the page apart on a Robinson map and near
+neighbours on the globe. Two things fall out of moving the pole to the middle.
+The centre-of-gravity track becomes what it physically is — 110° east is a
+rotation about the pole, not a slide across a rectangle. And a great circle from
+Tokyo to Washington is one short line over the Arctic instead of an arc that has
+to leave one edge of the map and come back in the other.
+
+Equal-area rather than equidistant because area is the property this map must
+not lie about: a country covers its true share of the canvas, which is the same
+reason the holdings map draws circles instead of colouring countries in. The
+price is shape. It smears progressively outwards, and the rim of the disc is the
+South Pole, one point opened out into a whole circle. Everything the data
+contains falls inside 91% of that radius — New Zealand is the outermost thing on
+the map — so the worst of it happens where there is nothing to see.
+
+Three consequences worth knowing before editing any of this:
+
+- **A segment that is straight in longitude and latitude is a curve here.** Two
+  coastline points twenty degrees apart in longitude lie on an arc of a
+  parallel, and joining them with a chord visibly cuts the corner. `projectRing`
+  subdivides anything longer than 4° of longitude before projecting; north–south
+  segments need no help, because meridians really are straight radial lines.
+- **The flow arcs are sampled great circles, not curves between two projected
+  points.** This is not decoration. A straight line drawn on this map from
+  Washington to Canberra runs over Siberia. `geoLine` interpolates on the sphere
+  and projects each sample, then pushes the path off the great circle by a small
+  amount so that twenty lines converging on one point stay countable. Swapping
+  the endpoints flips both the plane's normal and the sign of the bow, so
+  `arcPath(a, b, 1)` and `arcPath(b, a, −1)` trace the same curve in opposite
+  directions — which is how the net-direction arrowheads change ends without the
+  line moving.
+- **Antarctica is still skipped, for a new reason.** It used to be dropped
+  because it took half a cropped rectangle. Now it is dropped because its ring
+  closes along the line of 90°S, and this projection stretches that line into the
+  entire rim: the continent would be drawn as a disc covering the map. It holds
+  no reserves and appears in none of the four datasets.
+
 ## Things that will be misread if not stated
 
 - **Gold is at market value.** A country's gold line moves with the gold price
@@ -257,3 +303,8 @@ fetches three JSON files and will not run from `file://`.
 - **CSS keyed to element ids will not carry to a second page.** The basemap is
   styled by class for this reason — an unstyled graticule path falls back to
   SVG's default black fill and renders the meridians as solid wedges.
+- **A globe is a disc, so the figure is square.** The stylesheet caps it at
+  820px, which is where 430 viewBox units come out at the 1.9 pixels per unit
+  every stroke width, font size and bubble radius in the JS was drawn for.
+  Changing `DISC` in `projection.js` without changing that cap silently resizes
+  every label on both pages.

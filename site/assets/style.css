@@ -206,10 +206,30 @@ input[type="range"] {
 .figure { margin: 1rem 0 .75rem; position: relative; }
 .figure svg { display: block; width: 100%; height: auto; overflow: visible; }
 
+/* The globe is a disc, so its figure is square. Capping it keeps the map at
+   the 1.9 pixels per viewBox unit every stroke and label was drawn for, and
+   centring it under a wider column reads as deliberate rather than stranded —
+   the legend beneath is held to the same width so the two line up. */
+.figure.globe svg { max-width: 820px; margin-inline: auto; }
+.figure.globe + .legend-row { max-width: 820px; margin-inline: auto; }
+
 /* Keyed by class, not id: both pages draw this basemap, and an unstyled
    graticule path falls back to SVG's default black fill — which renders the
    meridians as solid wedges across the ocean. */
-.grat path { fill: none; stroke: var(--grid); stroke-width: .35; }
+.grat path, .grat line, .grat circle { fill: none; stroke: var(--grid); stroke-width: .35; }
+/* The equator and the rim are the two rings a reader navigates by: one is the
+   halfway line by area, the other is the South Pole opened out into a circle. */
+.grat circle.eq  { stroke: var(--axis); stroke-width: .5; }
+.grat circle.rim { stroke: var(--axis); stroke-width: .7; }
+.grat-label {
+  fill: var(--ink-muted);
+  font-size: 4.6px;
+  letter-spacing: .05em;
+  paint-order: stroke;
+  stroke: var(--surface-1);
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
 .land path {
   fill: var(--land);
   stroke: var(--land-edge);

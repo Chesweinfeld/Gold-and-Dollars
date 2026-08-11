@@ -35,6 +35,13 @@
         centroid, averaged on the sphere. It starts in the mid-Atlantic and ends
         in Central Asia.
       </p>
+      <p class="dek">
+        The map looks straight down on the <strong>North Pole</strong>. Every
+        reserve currency but the Australian dollar is issued north of the
+        tropics, as is every one of the twenty largest holders, so the pole is
+        the middle of this subject rather than its edge — and the track's drift
+        east becomes what it physically is, a rotation.
+      </p>
     </div>
 
     <div class="controls" role="group" aria-label="Map controls">
@@ -63,9 +70,9 @@
       the complete ones behind it.
     </p>
 
-    <figure class="figure">
-      <svg id="map" viewBox="-272 -138 544 222" role="img" aria-labelledby="map-title">
-        <title id="map-title">World map of official reserve holdings by country</title>
+    <figure class="figure globe">
+      <svg id="map" viewBox="-215 -215 430 430" role="img" aria-labelledby="map-title">
+        <title id="map-title">World map of official reserve holdings by country, on a north-polar projection</title>
         <g id="graticule" class="grat"></g>
         <g id="land" class="land"></g>
         <g id="track-line"></g>
@@ -186,10 +193,19 @@
         <tr>
           <td>Basemap</td>
           <td><a href="https://www.naturalearthdata.com/">Natural Earth 1:110m</a>, public domain</td>
-          <td>177 countries, simplified to 78&nbsp;KB</td>
+          <td>177 countries, simplified to 78&nbsp;KB, drawn north-polar</td>
         </tr>
       </tbody>
     </table>
+    <p class="fine">
+      Both maps use a Lambert azimuthal equal-area projection centred on the
+      North Pole. The centre of the disc is the pole, the outer circle is the
+      South Pole, and every country covers its true share of the map — no
+      landmass can masquerade as importance, which is also why the holdings map
+      draws circles rather than colouring countries in. Shape is what pays for
+      that: it distorts further out, and Australia and New Zealand, at about 90%
+      of the radius, are smeared around the rim. Antarctica is not drawn.
+    </p>
     <p class="fine">
       Every figure on this page is rebuilt from those sources by the scripts in
       <code>src/reserves/</code>, each of which prints its own validation report and
@@ -209,6 +225,7 @@
   <p>Built from IMF and World Bank data. Code MIT; data carries the rights of its sources.</p>
 </footer>
 
+<script src="assets/projection.js"></script>
 <script src="assets/app.js"></script>
 </body>
 </html>

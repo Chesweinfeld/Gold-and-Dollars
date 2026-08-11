@@ -79,6 +79,14 @@ Two pages: `index.html` for where reserves sit and what they are made of, and
 `flows.html` for the lines between countries — who holds US Treasuries, and
 whose currency the world owes its debts in.
 
+Both are drawn looking down on the North Pole, in an equal-area projection.
+Every reserve currency but the Australian dollar is issued north of the tropics,
+as is every one of the twenty largest holders, so a rectangular map splits the
+one neighbourhood that matters across two edges. On the pole, the centre of
+gravity's 110° east reads as the rotation it physically is, and the flow arcs
+can be real great circles — Tokyo to Washington over the Arctic, which is the
+way round the world you would actually go.
+
 `src/reserves/` rebuilds all of it from four public APIs, 36 validation checks.
 See `docs/reserve-currency-map.md`.
 

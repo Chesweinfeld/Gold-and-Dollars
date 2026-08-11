@@ -5,47 +5,14 @@
  * joined" section in index.html for why there is no third chart connecting them.
  */
 
+/* The projection, the SVG helper and the basemap come from projection.js,
+ * which both pages share. */
+
 'use strict';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-/* ── Robinson projection ──────────────────────────────────────────────
- * Chosen over equirectangular because at world scale the latter stretches the
- * high-latitude holders — Norway, Russia — into a misleading prominence, and
- * this map's whole subject is where the weight sits. */
-
-const ROB_X = [1.0000, 0.9986, 0.9954, 0.9900, 0.9822, 0.9730, 0.9600, 0.9427,
-               0.9216, 0.8962, 0.8679, 0.8350, 0.7986, 0.7597, 0.7186, 0.6732,
-               0.6213, 0.5722, 0.5322];
-const ROB_Y = [0.0000, 0.0620, 0.1240, 0.1860, 0.2480, 0.3100, 0.3720, 0.4340,
-               0.4958, 0.5571, 0.6176, 0.6769, 0.7346, 0.7903, 0.8435, 0.8936,
-               0.9394, 0.9761, 1.0000];
-const R = 100;
-
-function project(lon, lat) {
-  const a = Math.min(Math.abs(lat), 90);
-  const i = Math.min(Math.floor(a / 5), 17);
-  const t = (a - i * 5) / 5;
-  const x = ROB_X[i] + (ROB_X[i + 1] - ROB_X[i]) * t;
-  const y = ROB_Y[i] + (ROB_Y[i + 1] - ROB_Y[i]) * t;
-  return [
-    0.8487 * R * x * (lon * Math.PI / 180),
-    -1.3523 * R * y * (lat < 0 ? -1 : 1),
-  ];
-}
 
 /* ── small helpers ────────────────────────────────────────────────── */
 
 const el = (id) => document.getElementById(id);
-
-function svg(tag, attrs, parent) {
-  const node = document.createElementNS(SVG_NS, tag);
-  for (const k in attrs) {
-    if (attrs[k] !== null && attrs[k] !== undefined) node.setAttribute(k, attrs[k]);
-  }
-  if (parent) parent.appendChild(node);
-  return node;
-}
 
 function money(bn) {
   if (bn === null || bn === undefined) return '—';
@@ -84,32 +51,6 @@ let bubbleIndex = [];   // {cx, cy, r, country, value} for nearest-point hover
 let sizeScale = 1;
 
 /* ── map ──────────────────────────────────────────────────────────── */
-
-function drawGraticule() {
-  const g = el('graticule');
-  for (let lat = -60; lat <= 80; lat += 20) {
-    const pts = [];
-    for (let lon = -180; lon <= 180; lon += 5) pts.push(project(lon, lat));
-    svg('path', { d: 'M' + pts.map((p) => p.join(' ')).join('L') }, g);
-  }
-  for (let lon = -180; lon <= 180; lon += 30) {
-    const pts = [];
-    for (let lat = -60; lat <= 84; lat += 4) pts.push(project(lon, lat));
-    svg('path', { d: 'M' + pts.map((p) => p.join(' ')).join('L') }, g);
-  }
-}
-
-function drawLand() {
-  const g = el('land');
-  for (const c of W.countries) {
-    if (c.id === 'ATA') continue;          // Antarctica: no reserves, half the canvas
-    let d = '';
-    for (const ring of c.r) {
-      d += 'M' + ring.map((p) => project(p[0], p[1]).join(' ')).join('L') + 'Z';
-    }
-    svg('path', { d, 'data-id': c.id }, g);
-  }
-}
 
 function measureValue(country, yearIndex) {
   const total = country.total[yearIndex];
@@ -160,17 +101,18 @@ function drawBubbles() {
   return rows;
 }
 
-/* Label placement only — London, Frankfurt and Bern are close enough on a world
- * map that centred labels collide. Purely presentational; the positions
- * themselves come from the data file. */
+/* Label placement only — London, Frankfurt and Bern are within eleven units of
+ * each other here, and so are Washington and Ottawa, which the pole aspect
+ * stacks along one ray instead of one above the other. Purely presentational;
+ * the positions themselves come from the data file. */
 const ISSUER_LABEL = {
-  USD: { dx: 0, dy: 8.4, anchor: 'middle' },
-  CAD: { dx: -4, dy: -4.4, anchor: 'end' },
-  GBP: { dx: -4.5, dy: -3.5, anchor: 'end' },
-  EUR: { dx: 4.5, dy: -4.5, anchor: 'start' },
-  CHF: { dx: 4.5, dy: 6.5, anchor: 'start' },
-  CNY: { dx: 0, dy: -4.6, anchor: 'middle' },
-  JPY: { dx: 6.5, dy: -3.5, anchor: 'start' },
+  USD: { dx: -4.6, dy: 2.4, anchor: 'end' },
+  CAD: { dx: 4.6, dy: -2.6, anchor: 'start' },
+  GBP: { dx: -4.6, dy: 1.9, anchor: 'end' },
+  EUR: { dx: 4.8, dy: 2.2, anchor: 'start' },
+  CHF: { dx: 4.8, dy: -2.2, anchor: 'start' },
+  CNY: { dx: 0, dy: 9.2, anchor: 'middle' },
+  JPY: { dx: 5.5, dy: 3.4, anchor: 'start' },
   AUD: { dx: 0, dy: 8.4, anchor: 'middle' },
 };
 
@@ -314,10 +256,10 @@ function drawSizeLegend() {
   const labelX = maxR * 2 + 12;
   const width = labelX + 36;
   const height = maxR * 2 + pad * 2;
-  // The map renders at roughly 2 pixels per viewBox unit at a desktop width, so
-  // drawing the legend at the same ratio keeps these circles the size the map
-  // would actually draw them.
-  const scale = 2.0;
+  // The globe renders 430 viewBox units across an 820px cap — 1.9 pixels per
+  // unit at a desktop width — so drawing the legend at that same ratio keeps
+  // these circles the size the map would actually draw them.
+  const scale = 1.9;
 
   const s = svg('svg', {
     viewBox: `0 0 ${width} ${height}`,
@@ -627,8 +569,7 @@ async function main() {
   slider.max = H.years[H.years.length - 1];
   state.year = H.complete_through;
 
-  drawGraticule();
-  drawLand();
+  drawBasemap(el('graticule'), el('land'), W);
   drawIssuers();
   computeSizeScale();
   drawSizeLegend();
