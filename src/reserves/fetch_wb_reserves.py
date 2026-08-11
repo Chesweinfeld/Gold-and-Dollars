@@ -94,6 +94,7 @@ def main():
                 "iso3": iso3,
                 "name": meta["name"],
                 "region": meta["region"],
+                "iso2": meta["iso2"],
                 "is_aggregate": int(meta["is_aggregate"]),
                 # The World Bank's own capital coordinates. Carried because the
                 # 110m basemap has no polygon for the smallest states, and some
@@ -112,8 +113,9 @@ def main():
     with open(path, "w", newline="") as fh:
         w = csv.DictWriter(
             fh,
-            fieldnames=["iso3", "name", "region", "is_aggregate", "lat", "lon",
-                        "year", "total_usd", "ex_gold_usd", "gold_usd"],
+            fieldnames=["iso3", "iso2", "name", "region", "is_aggregate",
+                        "lat", "lon", "year", "total_usd", "ex_gold_usd",
+                        "gold_usd"],
         )
         w.writeheader()
         for r in out_rows:

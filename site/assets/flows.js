@@ -1,0 +1,446 @@
+/* Reserve currency flows — vanilla JS, no dependencies.
+ *
+ * Two arc maps that mean different things. The TIC layer draws real country
+ * pairs (holder -> United States). The BIS layer draws currency of
+ * denomination, so its arcs start at a central bank and mean "owed in this
+ * currency", never "lent by this country". Keeping that distinction visible is
+ * most of the design.
+ */
+
+'use strict';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/* ── projection: identical to the holdings map so countries line up ── */
+
+const ROB_X = [1.0000, 0.9986, 0.9954, 0.9900, 0.9822, 0.9730, 0.9600, 0.9427,
+               0.9216, 0.8962, 0.8679, 0.8350, 0.7986, 0.7597, 0.7186, 0.6732,
+               0.6213, 0.5722, 0.5322];
+const ROB_Y = [0.0000, 0.0620, 0.1240, 0.1860, 0.2480, 0.3100, 0.3720, 0.4340,
+               0.4958, 0.5571, 0.6176, 0.6769, 0.7346, 0.7903, 0.8435, 0.8936,
+               0.9394, 0.9761, 1.0000];
+const R = 100;
+
+function project(lon, lat) {
+  const a = Math.min(Math.abs(lat), 90);
+  const i = Math.min(Math.floor(a / 5), 17);
+  const t = (a - i * 5) / 5;
+  const x = ROB_X[i] + (ROB_X[i + 1] - ROB_X[i]) * t;
+  const y = ROB_Y[i] + (ROB_Y[i + 1] - ROB_Y[i]) * t;
+  return [0.8487 * R * x * (lon * Math.PI / 180),
+          -1.3523 * R * y * (lat < 0 ? -1 : 1)];
+}
+
+const el = (id) => document.getElementById(id);
+
+function svg(tag, attrs, parent) {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+
+function money(bn) {
+  if (bn == null) return '—';
+  if (Math.abs(bn) >= 1000) return '$' + (bn / 1000).toFixed(2) + 'tn';
+  if (Math.abs(bn) >= 1) return '$' + Math.round(bn).toLocaleString() + 'bn';
+  return '$' + (bn * 1000).toFixed(0) + 'm';
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function monthLabel(p) {
+  const [y, m] = p.split('-');
+  return `${MONTHS[+m - 1]} ${y}`;
+}
+
+/* An arc from a to b, bowed perpendicular to its own chord. Great circles would
+ * be more correct on a globe and less readable on a flat map — with 50 arcs
+ * converging on one point, a consistent bow is what keeps them separable. */
+function arcPath(from, to, bow) {
+  const [x1, y1] = project(from[0], from[1]);
+  const [x2, y2] = project(to[0], to[1]);
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  // Perpendicular offset, always bowing the same way round the sphere.
+  const k = bow * Math.min(len * 0.28, 46);
+  const cx = mx - (dy / len) * k;
+  const cy = my + (dx / len) * k;
+  return `M${x1} ${y1}Q${cx} ${cy} ${x2} ${y2}`;
+}
+
+let W = null;
+let F = null;
+
+function drawBase(gratId, landId) {
+  const g = el(gratId);
+  for (let lat = -60; lat <= 80; lat += 20) {
+    const pts = [];
+    for (let lon = -180; lon <= 180; lon += 5) pts.push(project(lon, lat));
+    svg('path', { d: 'M' + pts.map((p) => p.join(' ')).join('L') }, g);
+  }
+  for (let lon = -180; lon <= 180; lon += 30) {
+    const pts = [];
+    for (let lat = -60; lat <= 84; lat += 4) pts.push(project(lon, lat));
+    svg('path', { d: 'M' + pts.map((p) => p.join(' ')).join('L') }, g);
+  }
+  const land = el(landId);
+  for (const c of W.countries) {
+    if (c.id === 'ATA') continue;
+    let d = '';
+    for (const ring of c.r) {
+      d += 'M' + ring.map((p) => project(p[0], p[1]).join(' ')).join('L') + 'Z';
+    }
+    svg('path', { d }, land);
+  }
+}
+
+/* ── shared tooltip plumbing ──────────────────────────────────────── */
+
+function showTip(tip, mapEl, x, y, html) {
+  tip.innerHTML = html;
+  const box = mapEl.getBoundingClientRect();
+  const vb = mapEl.viewBox.baseVal;
+  const px = box.left + ((x - vb.x) / vb.width) * box.width;
+  const py = box.top + ((y - vb.y) / vb.height) * box.height;
+  const wrap = tip.parentElement.getBoundingClientRect();
+  tip.hidden = false;
+  tip.style.left = (px - wrap.left) + 'px';
+  tip.style.top = (py - wrap.top - 10) + 'px';
+}
+
+function nearest(mapEl, ev, nodes) {
+  const box = mapEl.getBoundingClientRect();
+  if (!box.width) return null;
+  const vb = mapEl.viewBox.baseVal;
+  const sx = vb.x + ((ev.clientX - box.left) / box.width) * vb.width;
+  const sy = vb.y + ((ev.clientY - box.top) / box.height) * vb.height;
+  let best = null;
+  let bestD = Infinity;
+  for (const n of nodes) {
+    const d = Math.hypot(n.x - sx, n.y - sy);
+    const score = d <= n.r ? d - n.r : d;
+    if (score < bestD) { bestD = score; best = n; }
+  }
+  return bestD > 6 ? null : best;
+}
+
+/* ─────────────────────────────  TIC  ───────────────────────────── */
+
+const tic = { i: 0, top: 20, playing: false, timer: null, nodes: [] };
+
+function ticRows(i) {
+  return F.tic.holders
+    .map((h) => ({ h, v: h.v[i] }))
+    .filter((r) => r.v)
+    .sort((a, b) => b.v - a.v);
+}
+
+function drawTic() {
+  const i = tic.i;
+  const rows = ticRows(i);
+  const shown = rows.slice(0, tic.top);
+  const max = rows.length ? rows[0].v : 1;
+
+  const arcs = el('tic-arcs');
+  const nodes = el('tic-nodes');
+  arcs.textContent = '';
+  nodes.textContent = '';
+  tic.nodes = [];
+
+  const target = F.tic.target;
+  // Thin arcs on top of thick ones, so a small holder stays hoverable.
+  for (const { h, v } of [...shown].reverse()) {
+    const w = Math.max(0.35, Math.sqrt(v / max) * 3.4);
+    svg('path', {
+      d: arcPath(h.c, target.c, 1),
+      class: 'arc', 'stroke-width': w.toFixed(2),
+    }, arcs);
+  }
+
+  for (const { h, v } of shown) {
+    const [x, y] = project(h.c[0], h.c[1]);
+    const r = Math.max(0.9, Math.sqrt(v / max) * 5.5);
+    svg('circle', { cx: x, cy: y, r, class: 'node' }, nodes);
+    tic.nodes.push({ x, y, r: Math.max(r, 2.4), h, v });
+  }
+  const [tx, ty] = project(target.c[0], target.c[1]);
+  svg('circle', { cx: tx, cy: ty, r: 4.2, class: 'node target' }, nodes);
+
+  el('tic-out').textContent = monthLabel(F.tic.periods[i]);
+  el('tic-period').value = i;
+
+  const total = F.tic.total[i];
+  const placed = F.tic.placed[i];
+  const official = F.tic.official[i];
+  const top = rows[0];
+
+  el('tic-readout').innerHTML = `
+    <dl class="stat"><dt>Held abroad, ${monthLabel(F.tic.periods[i])}</dt>
+      <dd>${money(total)}<span class="sub">${official ? (official / total * 100).toFixed(0) + '% foreign official' : 'official split not published'}</span></dd></dl>
+    <dl class="stat"><dt>Largest holder</dt>
+      <dd>${top ? top.h.name : '—'}<span class="sub">${top ? money(top.v) + ' · ' + (top.v / total * 100).toFixed(1) + '% of the total' : ''}</span></dd></dl>
+    <dl class="stat"><dt>Top ${Math.min(tic.top, rows.length)} shown</dt>
+      <dd>${money(shown.reduce((a, r) => a + r.v, 0))}<span class="sub">of ${rows.length} named holders</span></dd></dl>`;
+
+  el('tic-coverage').textContent =
+    `${(placed / total * 100).toFixed(0)}% of foreign holdings this month are ` +
+    `attributable to a named country and drawable as an arc. The rest is ` +
+    `"All Other"` +
+    (placed / total < 0.9 ? `, plus the grouped Caribbean and oil-exporter lines Treasury published until 2016.` : `.`);
+
+  el('tic-table').innerHTML =
+    `<thead><tr><th class="n">#</th><th>Holder</th><th class="n">Held</th>` +
+    `<th class="n">Share</th></tr></thead><tbody>` +
+    rows.slice(0, 20).map((r, n) =>
+      `<tr><td class="n">${n + 1}</td><td>${r.h.name}</td>` +
+      `<td class="n">${money(r.v)}</td>` +
+      `<td class="n">${(r.v / total * 100).toFixed(1)}%</td></tr>`).join('') +
+    `</tbody>`;
+}
+
+function ticLegend() {
+  el('tic-legend').innerHTML =
+    `<span class="legend-cap">Arc width ∝ value held; scaled to the largest holder each month</span>`;
+}
+
+/* ─────────────────────────────  BIS  ───────────────────────────── */
+
+const bis = { i: 0, cur: 'ALL', playing: false, timer: null, nodes: [] };
+const CUR_ORDER = ['USD', 'EUR', 'JPY'];
+
+function drawBis() {
+  const i = bis.i;
+  const list = bis.cur === 'ALL' ? CUR_ORDER : [bis.cur];
+
+  const rows = F.bis.countries
+    .map((c) => ({ c, v: list.reduce((a, k) => a + c[k][i], 0) }))
+    .filter((r) => r.v > 0)
+    .sort((a, b) => b.v - a.v);
+  // Three arcs per country, so the count multiplies fast; 30 borrowers is
+  // where the web still reads as a web rather than as hatching.
+  const shown = rows.slice(0, 30);
+  const max = shown.length ? shown[0].v : 1;
+
+  const arcs = el('bis-arcs');
+  const nodes = el('bis-nodes');
+  arcs.textContent = '';
+  nodes.textContent = '';
+  bis.nodes = [];
+
+  for (const { c } of [...shown].reverse()) {
+    for (const k of list) {
+      const v = c[k][i];
+      if (!v) continue;
+      const home = F.bis.currencies[k];
+      // Skip the degenerate arc from a currency's home to itself.
+      if (Math.hypot(home.c[0] - c.c[0], home.c[1] - c.c[1]) < 1.5) continue;
+      const w = Math.max(0.25, Math.sqrt(v / max) * 2.8);
+      svg('path', {
+        d: arcPath(home.c, c.c, 1),
+        class: 'arc cur-' + k, 'stroke-width': w.toFixed(2),
+      }, arcs);
+    }
+  }
+
+  for (const { c, v } of shown) {
+    const [x, y] = project(c.c[0], c.c[1]);
+    const r = Math.max(0.8, Math.sqrt(v / max) * 4.6);
+    svg('circle', { cx: x, cy: y, r, class: 'node' }, nodes);
+    bis.nodes.push({ x, y, r: Math.max(r, 2.4), c, v });
+  }
+  for (const k of list) {
+    const home = F.bis.currencies[k];
+    const [x, y] = project(home.c[0], home.c[1]);
+    svg('rect', {
+      x: x - 2.7, y: y - 2.7, width: 5.4, height: 5.4,
+      transform: `rotate(45 ${x} ${y})`, class: 'issuer-mark cur-stroke-' + k,
+    }, nodes);
+    const t = svg('text', {
+      x, y: y - 5.2, class: 'issuer-label', 'text-anchor': 'middle',
+    }, nodes);
+    t.textContent = k;
+  }
+
+  el('bis-out').textContent = F.bis.periods[i];
+  el('bis-period').value = i;
+
+  const tot = {};
+  for (const k of CUR_ORDER) {
+    tot[k] = F.bis.countries.reduce((a, c) => a + c[k][i], 0);
+  }
+  const all = F.bis.countries.reduce((a, c) => a + c.TO1[i], 0);
+  const top = rows[0];
+
+  el('bis-readout').innerHTML = `
+    <dl class="stat"><dt>Cross-border claims, ${F.bis.periods[i]}</dt>
+      <dd>${money(all)}<span class="sub">all currencies, ${F.bis.countries.length} counterparties</span></dd></dl>
+    <dl class="stat"><dt>Written in dollars</dt>
+      <dd>${(tot.USD / all * 100).toFixed(0)}%<span class="sub">${money(tot.USD)} · euro ${(tot.EUR / all * 100).toFixed(0)}%, yen ${(tot.JPY / all * 100).toFixed(0)}%</span></dd></dl>
+    <dl class="stat"><dt>Largest borrower${bis.cur === 'ALL' ? '' : ' in ' + bis.cur}</dt>
+      <dd>${top ? top.c.name : '—'}<span class="sub">${top ? money(top.v) : ''}</span></dd></dl>`;
+
+  el('bis-table').innerHTML =
+    `<thead><tr><th class="n">#</th><th>Counterparty</th><th class="n">USD</th>` +
+    `<th class="n">EUR</th><th class="n">JPY</th><th class="n">All</th>` +
+    `<th class="n">USD share</th></tr></thead><tbody>` +
+    rows.slice(0, 20).map((r, n) =>
+      `<tr><td class="n">${n + 1}</td><td>${r.c.name}</td>` +
+      `<td class="n">${money(r.c.USD[i])}</td>` +
+      `<td class="n">${money(r.c.EUR[i])}</td>` +
+      `<td class="n">${money(r.c.JPY[i])}</td>` +
+      `<td class="n">${money(r.c.TO1[i])}</td>` +
+      `<td class="n">${r.c.TO1[i] ? (r.c.USD[i] / r.c.TO1[i] * 100).toFixed(0) + '%' : '—'}</td></tr>`).join('') +
+    `</tbody>`;
+}
+
+function bisLegend() {
+  el('bis-legend').innerHTML =
+    CUR_ORDER.map((k) =>
+      `<span class="key"><span class="chip c-${k}"></span>${F.bis.currencies[k].name}` +
+      ` <span style="color:var(--ink-muted)">${F.bis.currencies[k].seat}</span></span>`).join('') +
+    `<span class="legend-cap">Arc width ∝ amount owed in that currency</span>`;
+}
+
+/* ── play loops ───────────────────────────────────────────────────── */
+
+function makePlay(state, draw, ids, n, ms) {
+  return function play() {
+    const btn = el(ids.btn);
+    if (state.playing) {
+      clearInterval(state.timer);
+      state.playing = false;
+      btn.dataset.state = '';
+      el(ids.label).textContent = 'Play';
+      return;
+    }
+    state.playing = true;
+    btn.dataset.state = 'playing';
+    el(ids.label).textContent = 'Pause';
+    if (state.i >= n() - 1) state.i = 0;
+    state.timer = setInterval(() => {
+      state.i += 1;
+      if (state.i >= n() - 1) { state.i = n() - 1; draw(); play(); return; }
+      draw();
+    }, ms);
+  };
+}
+
+/* ── wiring ───────────────────────────────────────────────────────── */
+
+function switchView(which) {
+  const onTic = which === 'tic';
+  el('panel-tic').hidden = !onTic;
+  el('panel-bis').hidden = onTic;
+  el('tab-tic').classList.toggle('on', onTic);
+  el('tab-bis').classList.toggle('on', !onTic);
+  el('tab-tic').setAttribute('aria-selected', String(onTic));
+  el('tab-bis').setAttribute('aria-selected', String(!onTic));
+  if (tic.playing && !onTic) ticPlay();
+  if (bis.playing && onTic) bisPlay();
+}
+
+let ticPlay, bisPlay;
+
+async function main() {
+  const [world, flows] = await Promise.all([
+    fetch('data/world.json').then((r) => r.json()),
+    fetch('data/flows.json').then((r) => r.json()),
+  ]);
+  W = world; F = flows;
+
+  drawBase('tic-grat', 'tic-land');
+  drawBase('bis-grat', 'bis-land');
+
+  tic.i = F.tic.periods.length - 1;
+  bis.i = F.bis.periods.length - 1;
+
+  const ticSlider = el('tic-period');
+  ticSlider.max = F.tic.periods.length - 1;
+  ticSlider.value = tic.i;
+  const bisSlider = el('bis-period');
+  bisSlider.max = F.bis.periods.length - 1;
+  bisSlider.value = bis.i;
+
+  ticLegend();
+  bisLegend();
+  drawTic();
+  drawBis();
+
+  ticPlay = makePlay(tic, drawTic,
+    { btn: 'tic-play', label: 'tic-play-label' },
+    () => F.tic.periods.length, 90);
+  bisPlay = makePlay(bis, drawBis,
+    { btn: 'bis-play', label: 'bis-play-label' },
+    () => F.bis.periods.length, 420);
+
+  ticSlider.addEventListener('input', () => {
+    if (tic.playing) ticPlay();
+    tic.i = +ticSlider.value;
+    drawTic();
+  });
+  bisSlider.addEventListener('input', () => {
+    if (bis.playing) bisPlay();
+    bis.i = +bisSlider.value;
+    drawBis();
+  });
+  el('tic-play').addEventListener('click', () => ticPlay());
+  el('bis-play').addEventListener('click', () => bisPlay());
+  el('tic-top').addEventListener('change', (e) => {
+    tic.top = +e.target.value;
+    drawTic();
+  });
+  el('bis-cur').addEventListener('change', (e) => {
+    bis.cur = e.target.value;
+    drawBis();
+  });
+  el('tab-tic').addEventListener('click', () => switchView('tic'));
+  el('tab-bis').addEventListener('click', () => switchView('bis'));
+
+  const ticMap = el('tic-map');
+  const ticTip = el('tic-tip');
+  ticMap.addEventListener('pointermove', (ev) => {
+    const hit = nearest(ticMap, ev, tic.nodes);
+    if (!hit) { ticTip.hidden = true; return; }
+    const total = F.tic.total[tic.i];
+    showTip(ticTip, ticMap, hit.x, hit.y,
+      `<b>${hit.h.name}</b>` +
+      `<div class="row"><span>US Treasuries held</span><span>${money(hit.v)}</span></div>` +
+      `<div class="row"><span>Share of foreign total</span><span>${(hit.v / total * 100).toFixed(1)}%</span></div>`);
+  });
+  ticMap.addEventListener('pointerleave', () => { ticTip.hidden = true; });
+
+  const bisMap = el('bis-map');
+  const bisTip = el('bis-tip');
+  bisMap.addEventListener('pointermove', (ev) => {
+    const hit = nearest(bisMap, ev, bis.nodes);
+    if (!hit) { bisTip.hidden = true; return; }
+    const c = hit.c;
+    const i = bis.i;
+    showTip(bisTip, bisMap, hit.x, hit.y,
+      `<b>${c.name}</b>` +
+      `<div class="row"><span>Owed in dollars</span><span>${money(c.USD[i])}</span></div>` +
+      `<div class="row"><span>Owed in euro</span><span>${money(c.EUR[i])}</span></div>` +
+      `<div class="row"><span>Owed in yen</span><span>${money(c.JPY[i])}</span></div>` +
+      `<div class="row"><span>All currencies</span><span>${money(c.TO1[i])}</span></div>`);
+  });
+  bisMap.addEventListener('pointerleave', () => { bisTip.hidden = true; });
+
+  el('src-tic').textContent =
+    `${monthLabel(F.tic.periods[0])} to ${monthLabel(F.tic.periods[F.tic.periods.length - 1])}, ` +
+    `${F.tic.holders.length} named countries`;
+  el('src-bis').textContent =
+    `${F.bis.periods[0]} to ${F.bis.periods[F.bis.periods.length - 1]}, ` +
+    `${F.bis.countries.length} counterparties`;
+}
+
+main().catch((err) => {
+  console.error(err);
+  document.querySelector('main').insertAdjacentHTML('afterbegin',
+    `<div class="panel"><p><strong>Could not load the data.</strong> This page ` +
+    `reads two JSON files and must be served over HTTP.</p></div>`);
+});

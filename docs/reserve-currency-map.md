@@ -37,6 +37,52 @@ district-to-hub edges are recorded by only one side of the transaction. In both
 cases the temptation is to fill the gap with a plausible allocation rule. In
 both cases the honest output is to name the gap.
 
+## The flows page
+
+`site/flows.html` answers the obvious follow-up — draw the lines between
+countries — with the two datasets that can support a line, and it keeps them
+apart because they mean different things.
+
+### TIC: a real country pair on both ends
+
+The US Treasury's International Capital reporting publishes foreign holdings of
+US Treasury securities by country, monthly since March 2000. It is the only
+bilateral reserve-asset series anyone publishes, and it carries two warnings
+from Treasury's own footnotes:
+
+- **Custody, not ownership.** Holdings are attributed to the country of the
+  US-based custodian. Euroclear is in Belgium, which is why Belgium holds
+  $477bn; Ireland, Luxembourg and the Caymans are fund domiciles. Treasury
+  states the table "may not provide a precise accounting of individual country
+  ownership".
+- **Official and private are mixed.** Only the world total is split. It is
+  currently 42% foreign official, so a country's line is not its central bank's
+  reserves.
+
+Coverage is not constant. Until 2016 Treasury published *Caribbean Banking
+Centers* and *Oil Exporters* as groups instead of their members, so the share
+of the total attributable to a named country runs from 71% at the low point to
+96% today. The page prints that share under the map and it moves as you scrub.
+
+### BIS: not a country pair at all
+
+BIS locational banking statistics give cross-border bank claims on each
+counterparty country, split by the currency the claim is denominated in. That
+is the mechanism that makes a currency a reserve currency — if your obligations
+are in dollars you must hold dollars — but it is emphatically not a lender-to-
+borrower matrix.
+
+The public dataflow publishes `L_REP_CTY = 5A` only, the aggregate of all
+reporting countries. There is no published lender-country by borrower-country
+breakdown, so the arcs on this view run from a *currency's central bank* to the
+borrower and mean **denominated in**, never **lent by**. The page says so above
+the map. Available denominations are USD, EUR, JPY and an all-currency total;
+sterling and the franc are inside the total but not published separately at
+this level.
+
+At 2026-Q1: $47.6tn of cross-border claims outstanding, 46% written in dollars,
+32% in euro, 5% in yen.
+
 ## The centre of gravity
 
 The one figure here that is computed rather than reported. Each country is
@@ -94,23 +140,42 @@ fails. The checks that matter:
 | **country sum vs COFER world total FX** | **0.94–1.03 across 31 overlapping years** |
 | every reporter placed on the map | 182 countries, 0 dropped |
 | reserve centroid in range and moving | 130.6° of longitude |
+| **TIC parts reproduce Treasury's printed Grand Total** | **worst month 1.0002, all 310 months** |
+| TIC foreign official ⊆ total | 0 months violate |
+| BIS named currencies ⊆ all-currency total | worst 102.0%, 3 of 15,893 past 100.5% |
 
-The fifth is the one worth keeping. The World Bank's country-level reserves and
-the IMF's world total are compiled by different institutions from different
-returns; that they agree within 6% in every overlapping year is evidence that
-neither the country/aggregate filter nor the gold split has gone wrong.
+33 checks in total. Two are worth keeping.
+
+The World Bank's country-level reserves and the IMF's world total are compiled
+by different institutions from different returns; that they agree within 6% in
+every overlapping year is evidence that neither the country/aggregate filter nor
+the gold split has gone wrong.
+
+The TIC reconciliation is the other. Treasury prints a Grand Total that is not
+derived from the parts this parser extracts, so summing every published line
+back to it in all 310 months is a real check on the column assignment — and it
+is what caught two bugs: the pre-2016 group rows (*Caribbean Banking Centers*,
+*Oil Exporters*) which are part of the total but are not named countries, and
+the series-break months where Treasury prints the same month twice, new
+benchmark beside superseded estimate.
 
 ## Rebuilding
 
 ```bash
 python src/reserves/fetch_cofer.py        # -> data/reserves/cofer_currency_shares.csv
 python src/reserves/fetch_wb_reserves.py  # -> data/reserves/reserves_by_country.csv
+python src/reserves/fetch_tic.py          # -> data/reserves/tic_treasury_holders.csv
+python src/reserves/fetch_bis.py          # -> data/reserves/bis_claims_by_currency.csv
 python src/reserves/build_geometry.py     # -> site/data/world.json
 python src/reserves/build_site_data.py    # -> site/data/holders.json, cofer.json
+python src/reserves/build_flows_data.py   # -> site/data/flows.json
 ```
 
-Order matters twice: `fetch_wb_reserves.py` cross-checks itself against the
-COFER extract, and `build_site_data.py` needs the geometry for its centroids.
+Order matters three times: `fetch_wb_reserves.py` cross-checks itself against
+the COFER extract, `build_site_data.py` needs the geometry for its centroids,
+and `build_flows_data.py` needs both of those — it takes country positions from
+`holders.json` and the basemap so the two pages place a country identically,
+and the ISO2-to-ISO3 join for BIS from the World Bank extract.
 
 Serve it locally with `python3 -m http.server 8817 --directory site` — the page
 fetches three JSON files and will not run from `file://`.
@@ -130,3 +195,16 @@ fetches three JSON files and will not run from `file://`.
   ($432bn) and Hong Kong. They are placed from the World Bank's own capital
   coordinates and carry a `shape: 0` flag; dropping them would have quietly
   removed a major holder from the map and biased the centroid west.
+- **Bermuda holds $101bn of Treasuries and reports no official reserves**, so it
+  is in neither gazetteer. `build_flows_data.py` fetches the one missing
+  coordinate from the World Bank country endpoint rather than having it typed
+  in.
+- **The TIC file is tab separated with a footnote apparatus** that has to be
+  told apart from data. Prose rows are identified by having no numeric cells,
+  not by a maintained list of strings.
+- **Summing the BIS extract counts the world several times.** It contains
+  regional and income aggregates alongside countries; use BIS's own `5J`
+  all-counterparties row for a total, or join to ISO3 first and sum that.
+- **CSS keyed to element ids will not carry to a second page.** The basemap is
+  styled by class for this reason — an unstyled graticule path falls back to
+  SVG's default black fill and renders the meridians as solid wedges.

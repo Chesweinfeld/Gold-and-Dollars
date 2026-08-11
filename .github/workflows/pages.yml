@@ -33,16 +33,18 @@ jobs:
       - name: Check the site has its data
         run: |
           set -e
-          for f in site/index.html site/assets/app.js site/assets/style.css \
-                   site/data/world.json site/data/holders.json site/data/cofer.json; do
+          for f in site/index.html site/flows.html \
+                   site/assets/app.js site/assets/flows.js site/assets/style.css \
+                   site/data/world.json site/data/holders.json \
+                   site/data/cofer.json site/data/flows.json; do
             test -s "$f" || { echo "missing or empty: $f"; exit 1; }
           done
           python3 - <<'PY'
-          import json, sys
-          for name in ("world", "holders", "cofer"):
+          import json
+          for name in ("world", "holders", "cofer", "flows"):
               with open(f"site/data/{name}.json") as fh:
                   json.load(fh)
-          print("all three data files parse")
+          print("all four data files parse")
           PY
 
       - uses: actions/configure-pages@v5

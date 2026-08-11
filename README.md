@@ -71,10 +71,16 @@ the reserves are denominated in.
 |---|---|
 | `data/reserves/cofer_currency_shares.csv` | IMF COFER — world reserve shares by currency, 1995–2026Q1, including the pre-euro DEM, FRF, NLG and ECU |
 | `data/reserves/reserves_by_country.csv` | World Bank — reserves per country per year, 1960–2025, gold separable |
-| `site/` | the page itself; no frameworks, no CDN, no third-party code at runtime |
+| `data/reserves/tic_treasury_holders.csv` | US Treasury TIC — **foreign holdings of US Treasuries by country, monthly 2000–2025**, 50 named countries |
+| `data/reserves/bis_claims_by_currency.csv` | BIS — cross-border bank claims on each country by currency of denomination, quarterly |
+| `site/` | the pages themselves; no frameworks, no CDN, no third-party code at runtime |
 
-`src/reserves/` rebuilds all of it from two public APIs. See
-`docs/reserve-currency-map.md`.
+Two pages: `index.html` for where reserves sit and what they are made of, and
+`flows.html` for the lines between countries — who holds US Treasuries, and
+whose currency the world owes its debts in.
+
+`src/reserves/` rebuilds all of it from four public APIs, 33 validation checks.
+See `docs/reserve-currency-map.md`.
 
 ## Findings
 
@@ -181,6 +187,8 @@ join.
 | TePaske, Brill 2010 | in copyright — **code only, no data** |
 | IMF COFER | public API — © IMF, redistributed under its terms of use |
 | World Bank development indicators | public API — **CC-BY 4.0** |
+| US Treasury TIC | **US public domain** (work of the federal government) |
+| BIS locational banking statistics | public API — © BIS, reuse with attribution |
 | Natural Earth 1:110m | **public domain** |
 
 Full citations:

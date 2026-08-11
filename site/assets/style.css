@@ -206,8 +206,11 @@ input[type="range"] {
 .figure { margin: 1rem 0 .75rem; position: relative; }
 .figure svg { display: block; width: 100%; height: auto; overflow: visible; }
 
-#graticule path { fill: none; stroke: var(--grid); stroke-width: .35; }
-#land path {
+/* Keyed by class, not id: both pages draw this basemap, and an unstyled
+   graticule path falls back to SVG's default black fill — which renders the
+   meridians as solid wedges across the ocean. */
+.grat path { fill: none; stroke: var(--grid); stroke-width: .35; }
+.land path {
   fill: var(--land);
   stroke: var(--land-edge);
   stroke-width: .3;
@@ -309,6 +312,83 @@ input[type="range"] {
 .c-CAD   { background: var(--s6); }  .f-CAD   { fill: var(--s6); }
 .c-AUD   { background: var(--s7); }  .f-AUD   { fill: var(--s7); }
 .c-OTH   { background: var(--s-other); } .f-OTH { fill: var(--s-other); }
+
+/* ── flows page ───────────────────────────────────────────────────── */
+
+.viewswitch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  margin-bottom: 1.25rem;
+}
+.viewswitch button {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  gap: .18rem;
+  align-items: flex-start;
+  font: inherit;
+  font-size: .95rem;
+  font-weight: 600;
+  text-align: left;
+  padding: .7rem .9rem;
+  color: var(--ink-2);
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.viewswitch button span {
+  font-size: .75rem;
+  font-weight: 400;
+  letter-spacing: .03em;
+  color: var(--ink-muted);
+}
+.viewswitch button:hover { border-color: var(--axis); }
+.viewswitch button.on {
+  color: var(--ink);
+  border-color: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--s1);
+}
+
+.arc {
+  fill: none;
+  stroke: var(--s1);
+  stroke-opacity: .5;
+  stroke-linecap: round;
+}
+.arc.cur-USD { stroke: var(--s1); }
+.arc.cur-EUR { stroke: var(--s2); }
+.arc.cur-JPY { stroke: var(--s3); }
+
+.node {
+  fill: var(--bubble-fill);
+  stroke: var(--bubble);
+  stroke-width: .5;
+}
+.node.target { fill: var(--s2); stroke: var(--surface-1); stroke-width: 1.1; }
+
+.issuer-mark { fill: var(--surface-1); stroke-width: 1.1; }
+.cur-stroke-USD { stroke: var(--s1); }
+.cur-stroke-EUR { stroke: var(--s2); }
+.cur-stroke-JPY { stroke: var(--s3); }
+
+.sw-arc { background: var(--bubble-fill); border: 1px solid var(--bubble); }
+.sw-target { background: var(--s2); }
+
+.warnline {
+  margin: 0 0 1.1rem;
+  padding: .6rem .8rem;
+  max-width: 68ch;
+  font-size: .875rem;
+  color: var(--ink-2);
+  background: var(--plane);
+  border-left: 3px solid var(--s2);
+  border-radius: 0 6px 6px 0;
+}
+
+.masthead .eyebrow a { color: inherit; text-decoration: none; }
+.masthead .eyebrow a:hover { color: var(--ink-2); }
 
 /* ── readout ──────────────────────────────────────────────────────── */
 

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reserve Currency Flows</title>
+<meta name="description" content="Who holds US Treasuries, month by month since 2000, and which currency the world's cross-border bank claims are written in — US Treasury TIC and BIS data.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow"><a href="index.html">Gold and Dollars — the Reserve Currency Map</a></p>
+    <h1>Flows</h1>
+    <p class="standfirst">
+      The holdings map shows where reserves sit. This one shows the lines between
+      countries: who lends the United States its money, and whose currency the
+      rest of the world owes its debts in.
+    </p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="viewswitch" role="tablist" aria-label="Flow view">
+    <button role="tab" id="tab-tic" aria-controls="panel-tic" aria-selected="true" class="on">
+      Who holds US Treasuries
+      <span>bilateral · monthly · 2000–2025</span>
+    </button>
+    <button role="tab" id="tab-bis" aria-controls="panel-bis" aria-selected="false">
+      Whose currency the world owes in
+      <span>by denomination · annual · 2000–2026</span>
+    </button>
+  </div>
+
+  <!-- ─────────────────────────────  TIC  ───────────────────────────── -->
+  <section class="panel" id="panel-tic" role="tabpanel" aria-labelledby="tab-tic">
+    <div class="panel-head">
+      <h2>Who holds US Treasuries</h2>
+      <p class="dek">
+        Every arc is a real country pair: a foreign holder at one end, the United
+        States at the other. Arc width is the value held. This is the only
+        genuinely bilateral reserve-asset series anyone publishes — and it is a
+        record of <em>custody</em>, not ownership, which is why Belgium and the
+        Cayman Islands sit so high.
+      </p>
+    </div>
+
+    <div class="controls" role="group" aria-label="Treasury holdings controls">
+      <div class="control grow">
+        <label for="tic-period">Month <output id="tic-out">Dec 2025</output></label>
+        <div class="slider-row">
+          <button id="tic-play" class="btn-play" aria-label="Play the months">
+            <span class="play-icon" aria-hidden="true"></span><span id="tic-play-label">Play</span>
+          </button>
+          <input type="range" id="tic-period" min="0" max="0" step="1" value="0">
+        </div>
+      </div>
+      <div class="control">
+        <label for="tic-top">Show</label>
+        <select id="tic-top">
+          <option value="10">Top 10 holders</option>
+          <option value="20" selected>Top 20 holders</option>
+          <option value="99">All named holders</option>
+        </select>
+      </div>
+    </div>
+
+    <figure class="figure">
+      <svg id="tic-map" viewBox="-272 -138 544 222" role="img" aria-labelledby="tic-title">
+        <title id="tic-title">Arcs from each foreign holder of US Treasury securities to the United States</title>
+        <g id="tic-grat" class="grat"></g>
+        <g id="tic-land" class="land"></g>
+        <g id="tic-arcs"></g>
+        <g id="tic-nodes"></g>
+      </svg>
+      <div id="tic-tip" class="tip" hidden></div>
+    </figure>
+
+    <div class="legend-row">
+      <div class="legend" id="tic-legend"></div>
+      <div class="legend keys">
+        <span class="key"><span class="swatch sw-arc"></span>Treasuries held</span>
+        <span class="key"><span class="swatch sw-target"></span>United States</span>
+      </div>
+    </div>
+
+    <div class="readout" id="tic-readout"></div>
+
+    <p class="provisional" id="tic-coverage"></p>
+
+    <details class="table-view">
+      <summary>Table view — holders this month</summary>
+      <div class="table-scroll"><table id="tic-table"></table></div>
+    </details>
+  </section>
+
+  <!-- ─────────────────────────────  BIS  ───────────────────────────── -->
+  <section class="panel" id="panel-bis" role="tabpanel" aria-labelledby="tab-bis" hidden>
+    <div class="panel-head">
+      <h2>Whose currency the world owes in</h2>
+      <p class="dek">
+        Cross-border bank claims on each country, split by the currency the debt
+        is written in. This is what makes a currency a reserve currency: if your
+        obligations are in dollars, you must hold dollars. Arc colour is the
+        currency; width is the amount.
+      </p>
+      <p class="warnline">
+        The arcs start at the currency's central bank because that is what the
+        colour means — <strong>denominated in</strong>, never <strong>lent
+        by</strong>. The BIS publishes no lender-country by borrower-country
+        matrix, so nobody can honestly draw that.
+      </p>
+    </div>
+
+    <div class="controls" role="group" aria-label="Currency claims controls">
+      <div class="control grow">
+        <label for="bis-period">Quarter <output id="bis-out">2026-Q1</output></label>
+        <div class="slider-row">
+          <button id="bis-play" class="btn-play" aria-label="Play the quarters">
+            <span class="play-icon" aria-hidden="true"></span><span id="bis-play-label">Play</span>
+          </button>
+          <input type="range" id="bis-period" min="0" max="0" step="1" value="0">
+        </div>
+      </div>
+      <div class="control">
+        <label for="bis-cur">Currency</label>
+        <select id="bis-cur">
+          <option value="ALL" selected>All three</option>
+          <option value="USD">US dollar only</option>
+          <option value="EUR">Euro only</option>
+          <option value="JPY">Japanese yen only</option>
+        </select>
+      </div>
+    </div>
+
+    <figure class="figure">
+      <svg id="bis-map" viewBox="-272 -138 544 222" role="img" aria-labelledby="bis-title">
+        <title id="bis-title">Cross-border bank claims on each country by currency of denomination</title>
+        <g id="bis-grat" class="grat"></g>
+        <g id="bis-land" class="land"></g>
+        <g id="bis-arcs"></g>
+        <g id="bis-nodes"></g>
+      </svg>
+      <div id="bis-tip" class="tip" hidden></div>
+    </figure>
+
+    <div class="legend-row">
+      <div class="legend" id="bis-legend"></div>
+    </div>
+
+    <div class="readout" id="bis-readout"></div>
+
+    <details class="table-view">
+      <summary>Table view — largest borrowers this quarter</summary>
+      <div class="table-scroll"><table id="bis-table"></table></div>
+    </details>
+  </section>
+
+  <!-- ────────────────────────────  LIMITS  ─────────────────────────── -->
+  <section class="panel prose">
+    <h2>What each of these arcs is actually claiming</h2>
+    <p>
+      Two flow maps, two different kinds of line, and it matters which is which.
+    </p>
+    <h3>The Treasury arcs are real country pairs — of custodians</h3>
+    <p>
+      TIC records who the US-based custodian says holds the security. Treasury's
+      own footnote says the table "may not provide a precise accounting of
+      individual country ownership". Euroclear sits in Belgium, so Belgium's
+      $477bn is mostly other people's; Ireland, Luxembourg and the Caymans are
+      fund domiciles. A Saudi holding managed through London appears as the
+      United Kingdom. Read the top of this list as a map of the custody
+      industry as much as of national wealth.
+    </p>
+    <p>
+      The series also mixes official and private holders. Only the world total
+      is split, and it is currently 42% foreign official — so a country's line
+      is not its central bank's reserves.
+    </p>
+    <h3>The currency arcs are not country pairs at all</h3>
+    <p>
+      The BIS publishes cross-border claims by counterparty country and by
+      currency of denomination, but only for all reporting banks combined. There
+      is no published matrix of which country lent to which. The arc from
+      Frankfurt to Warsaw means Poland owes that much in euro; it does not mean
+      Germany lent it. Drawing it as though it did would be inventing the most
+      interesting part of the picture.
+    </p>
+    <h3>Coverage is not constant</h3>
+    <p>
+      Until 2016 Treasury published "Caribbean Banking Centers" and "Oil
+      Exporters" as groups instead of their members, so the early months place
+      less of the total on named countries — 71% at the low point against 96%
+      today. The figure under the map is the share currently drawable, and it
+      moves as you scrub back.
+    </p>
+  </section>
+
+  <section class="panel prose" id="sources">
+    <h2>Sources</h2>
+    <table class="src">
+      <thead><tr><th>Data</th><th>Source</th><th>Coverage</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Treasury holdings by country</td>
+          <td><a href="https://ticdata.treasury.gov/Publish/mfhhis01.txt">US Treasury TIC, Major Foreign Holders</a></td>
+          <td id="src-tic">—</td>
+        </tr>
+        <tr>
+          <td>Claims by currency</td>
+          <td><a href="https://data.bis.org/topics/LBS">BIS locational banking statistics</a></td>
+          <td id="src-bis">—</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="fine">
+      Rebuilt by <code>src/reserves/fetch_tic.py</code>,
+      <code>fetch_bis.py</code> and <code>build_flows_data.py</code>, each of
+      which prints a validation report and refuses to write output that fails.
+      The TIC parse reconciles to Treasury's own printed Grand Total in all 310
+      months.
+    </p>
+    <p class="fine"><a href="index.html">← Back to the holdings map</a></p>
+  </section>
+
+</main>
+
+<footer class="wrap foot">
+  <p>Built from US Treasury and BIS data. Code MIT; data carries the rights of its sources.</p>
+</footer>
+
+<script src="assets/flows.js"></script>
+</body>
+</html>
