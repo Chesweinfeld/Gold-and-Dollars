@@ -77,6 +77,25 @@ function computeSizeScale() {
   return max;
 }
 
+/* A pie slice of `turns` starting at twelve o'clock and going clockwise, which
+ * is where a reader expects a proportion of a circle to start and which way
+ * round they expect it to run. */
+function wedge(cx, cy, r, turns) {
+  const a = turns * 2 * Math.PI;
+  const x = cx + r * Math.sin(a);
+  const y = cy - r * Math.cos(a);
+  return `M${cx.toFixed(2)} ${cy.toFixed(2)}L${cx.toFixed(2)} ${(cy - r).toFixed(2)}` +
+         `A${r.toFixed(2)} ${r.toFixed(2)} 0 ${turns > 0.5 ? 1 : 0} 1 ` +
+         `${x.toFixed(2)} ${y.toFixed(2)}Z`;
+}
+
+function goldShare(country, yi) {
+  const total = country.total[yi];
+  const gold = country.gold[yi];
+  if (!total || total <= 0 || gold === null || gold === undefined) return null;
+  return Math.max(0, Math.min(1, gold / total));
+}
+
 function drawBubbles() {
   const g = el('bubbles');
   g.textContent = '';
@@ -87,16 +106,30 @@ function drawBubbles() {
   for (const c of H.countries) {
     const v = measureValue(c, yi);
     if (!v || v <= 0) continue;
-    rows.push({ c, v });
+    rows.push({ c, v, share: goldShare(c, yi) });
   }
   // Largest first so small circles land on top and stay clickable.
   rows.sort((a, b) => b.v - a.v);
 
-  for (const { c, v } of rows) {
+  // Only the all-reserves measure has two parts to show. Asking for gold alone
+  // or foreign exchange alone already picked a slice, so the circle is whole
+  // and takes that slice's colour.
+  const split = state.measure === 'total';
+
+  for (const { c, v, share } of rows) {
     const [cx, cy] = project(c.c[0], c.c[1]);
     const r = Math.max(0.6, Math.sqrt(v) * sizeScale);
-    const node = svg('circle', { cx, cy, r, class: 'bubble', 'data-id': c.id }, g);
-    bubbleIndex.push({ cx, cy, r, country: c, value: v, node });
+    // A wedge of a whole turn draws a zero-length arc and disappears, so an
+    // all-gold holder gets a gold circle instead.
+    const allGold = state.measure === 'gold' || (split && share !== null && share > 0.995);
+    const node = svg('g', { class: 'bub', 'data-id': c.id }, g);
+    svg('circle', { cx, cy, r, class: 'bubble' + (allGold ? ' is-gold' : '') }, node);
+    // Below about a fiftieth the wedge is thinner than its own outline, and
+    // drawing it just thickens the rim into a lie.
+    if (split && !allGold && share !== null && share > 0.02) {
+      svg('path', { d: wedge(cx, cy, r, share), class: 'slice-gold' }, node);
+    }
+    bubbleIndex.push({ cx, cy, r, country: c, value: v, share, node });
   }
   return rows;
 }
@@ -209,11 +242,13 @@ function initHover() {
     const yi = H.years.indexOf(state.year);
     const total = best.country.total[yi];
     const gold = best.country.gold[yi];
+    const pct = best.share === null ? null : (best.share * 100).toFixed(0) + '%';
     tip.innerHTML =
       `<b>${best.country.name}</b>` +
       `<div class="row"><span>All reserves</span><span>${money(total)}</span></div>` +
       (gold !== null && gold !== undefined
-        ? `<div class="row"><span>of which gold</span><span>${money(gold)}</span></div>`
+        ? `<div class="row"><span>Gold at market</span><span>${money(gold)}${pct ? ' · ' + pct : ''}</span></div>` +
+          `<div class="row"><span>Foreign exchange</span><span>${money(total - gold)}</span></div>`
         : '') +
       `<div class="row"><span>Share of world</span><span>${sharePct(best.value)}</span></div>`;
 
@@ -257,6 +292,8 @@ function drawSizeLegend() {
     : 'Circle area ∝ reserves, on the same world scale as the whole globe';
   host.appendChild(cap);
 
+  drawKeyLegend();
+
   const marks = [100, 1000, 3000];
   const rs = marks.map((m) => Math.max(1.2, Math.sqrt(m) * sizeScale));
   const maxR = rs[rs.length - 1];
@@ -279,9 +316,11 @@ function drawSizeLegend() {
   marks.forEach((m, i) => {
     const r = rs[i];
     const cy = height - pad - r;
+    // Neutral, not the foreign-exchange blue: these circles are about size
+    // alone, and a blue one beside a two-colour map would read as a slice.
     svg('circle', {
       cx: maxR + pad, cy, r,
-      fill: 'none', stroke: 'var(--bubble)', 'stroke-width': 0.6, opacity: 0.8,
+      fill: 'none', stroke: 'var(--ink-muted)', 'stroke-width': 0.6, opacity: 0.9,
     }, s);
     const topY = cy - r;
     svg('line', {
@@ -291,6 +330,18 @@ function drawSizeLegend() {
     const t = svg('text', { x: labelX, y: topY + 1.8 }, s);
     t.textContent = money(m);
   });
+}
+
+/* Built here rather than written into the page, because which slices exist
+ * depends on the measure: asking for gold alone leaves nothing to divide. */
+function drawKeyLegend() {
+  const parts = state.measure === 'total'
+    ? [['sw-bubble', 'Foreign exchange'], ['sw-gold', 'Gold at market']]
+    : [[state.measure === 'gold' ? 'sw-gold' : 'sw-bubble',
+        state.measure === 'gold' ? 'Gold at market' : 'Foreign exchange']];
+  parts.push(['sw-track', 'Centre of gravity'], ['sw-issuer', 'Reserve-currency issuer']);
+  el('key-legend').innerHTML = parts.map(([cls, text]) =>
+    `<span class="key"><span class="swatch ${cls}"></span>${text}</span>`).join('');
 }
 
 /* ── readout + table ──────────────────────────────────────────────── */
@@ -313,16 +364,20 @@ function updateReadout(rows) {
     <dl class="stat"><dt>Centre of gravity</dt>
       <dd>${here ? coord(here[0], here[1]) : '—'}<span class="sub">${moved >= 0 ? moved.toFixed(0) + '° east' : Math.abs(moved).toFixed(0) + '° west'} of its 1960 position</span></dd></dl>`;
 
+  // The gold column carries the slice as a number as well as a wedge, which is
+  // the relief the amber owes for sitting at 2.1:1 against a light surface.
   const rowsHtml = rows.slice(0, 15).map((r, i) => {
     const gold = r.c.gold[yi];
     return `<tr><td class="n">${i + 1}</td><td>${r.c.name}</td>` +
       `<td class="n">${money(r.v)}</td>` +
       `<td class="n">${(r.v / total * 100).toFixed(1)}%</td>` +
-      `<td class="n">${gold ? money(gold) : '—'}</td></tr>`;
+      `<td class="n">${gold ? money(gold) : '—'}</td>` +
+      `<td class="n">${r.share === null ? '—' : (r.share * 100).toFixed(1) + '%'}</td></tr>`;
   }).join('');
   el('holders-table').innerHTML =
     `<thead><tr><th class="n">#</th><th>Country</th><th class="n">${label}</th>` +
-    `<th class="n">Share</th><th class="n">Gold</th></tr></thead><tbody>${rowsHtml}</tbody>`;
+    `<th class="n">Share</th><th class="n">Gold</th><th class="n">Gold %</th></tr></thead>` +
+    `<tbody>${rowsHtml}</tbody>`;
 }
 
 /* ── COFER stacked area ───────────────────────────────────────────── */

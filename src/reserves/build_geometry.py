@@ -1,9 +1,23 @@
 """Vendor a world basemap small enough to ship in the page.
 
-Natural Earth 1:110m admin-0, simplified and rounded, written as a compact
-JSON the site parses directly. Natural Earth is public domain, so this can be
+Natural Earth 1:50m admin-0, simplified and rounded, written as a compact JSON
+the site parses directly. Natural Earth is public domain, so this can be
 committed without a licence obligation, and vendoring it means the site loads
 no third-party code at runtime.
+
+50m rather than 110m because the map now zooms. At the Europe view one degree
+of latitude is about twelve pixels, so 110m's 0.30° simplification showed as a
+three-pixel error on every coastline and swallowed most of the small states
+outright — Singapore, Malta, Luxembourg, Hong Kong, all of them reserve holders.
+
+The tolerance is per ring rather than global: `min(TOLERANCE, span / 25)`, so a
+long coastline is thinned hard and a country a fifth of a degree across keeps
+enough points to still be that country. A flat tolerance coarse enough to keep
+the file small drops forty of them.
+
+Holes are kept, so Lesotho is a hole in South Africa rather than something South
+Africa paints over. The page draws each country's rings as one path with
+fill-rule: evenodd, which needs no assumption about winding order.
 
 Also emits a centroid per country. The centroid is taken from each country's
 *largest* polygon, not from all of them area-weighted: weighting every polygon
@@ -21,12 +35,13 @@ import os
 from common import SITE_DATA, ensure_dirs, finish, http_get, report
 
 URL = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/"
-       "master/geojson/ne_110m_admin_0_countries.geojson")
+       "master/geojson/ne_50m_admin_0_countries.geojson")
 
 # Natural Earth writes ISO_A3 = "-99" for a handful of sovereignties; ADM0_A3
 # carries a usable code for all of them.
-PRECISION = 2
-TOLERANCE = 0.30  # degrees; visually lossless at the sizes this map is drawn
+PRECISION = 2     # 0.01 deg is a tenth of a pixel at the deepest zoom here
+TOLERANCE = 0.10  # degrees, and less than that on anything small — see SPAN_DIV
+SPAN_DIV = 25
 
 
 def simplify(points, tol):
@@ -85,15 +100,34 @@ def ring_centroid(ring):
 
 
 def polygons(geometry):
-    """Every outer ring in a Polygon or MultiPolygon, holes dropped. At 110m the
-    only holes are Lesotho and the Vatican-scale enclaves; dropping them costs
-    nothing visually and halves the parsing the page has to do."""
+    """Every ring in a Polygon or MultiPolygon, holes included. The page fills
+    them with fill-rule: evenodd, so an enclave comes out as a hole without
+    anyone having to trust Natural Earth's winding order."""
     kind = geometry["type"]
     if kind == "Polygon":
-        return [geometry["coordinates"][0]]
+        return list(geometry["coordinates"])
     if kind == "MultiPolygon":
-        return [poly[0] for poly in geometry["coordinates"]]
+        return [ring for poly in geometry["coordinates"] for ring in poly]
     return []
+
+
+def ring_tolerance(points):
+    """Small countries are simplified less. A flat tolerance loose enough to
+    keep the file shippable erases anything under about a degree across, and
+    several of those hold serious reserves."""
+    span = max(max(p[0] for p in points) - min(p[0] for p in points),
+               max(p[1] for p in points) - min(p[1] for p in points))
+    return min(TOLERANCE, span / SPAN_DIV)
+
+
+def dedupe(points):
+    """Rounding can put two neighbours on the same coordinate; a ring of three
+    distinct points is not a shape."""
+    out = [points[0]]
+    for p in points[1:]:
+        if p != out[-1]:
+            out.append(p)
+    return out
 
 
 def main():
@@ -117,11 +151,15 @@ def main():
         rings = []
         for ring in polygons(feat["geometry"]):
             points_in += len(ring)
-            small = simplify([(float(x), float(y)) for x, y in ring], TOLERANCE)
+            pts = [(float(x), float(y)) for x, y in ring]
+            small = simplify(pts, ring_tolerance(pts))
             if len(small) < 4:
                 continue
-            points_out += len(small)
-            rings.append([[round(x, PRECISION), round(y, PRECISION)] for x, y in small])
+            rounded = dedupe([[round(x, PRECISION), round(y, PRECISION)] for x, y in small])
+            if len(rounded) < 4:
+                continue
+            points_out += len(rounded)
+            rings.append(rounded)
         if not rings:
             dropped += 1
             continue
@@ -139,9 +177,10 @@ def main():
 
     countries.sort(key=lambda c: c["id"])
     out = {
-        "source": "Natural Earth 1:110m admin-0 (public domain)",
+        "source": "Natural Earth 1:50m admin-0 (public domain)",
         "url": URL,
         "tolerance_deg": TOLERANCE,
+        "tolerance_span_div": SPAN_DIV,
         "precision_dp": PRECISION,
         "countries": countries,
     }
@@ -154,10 +193,25 @@ def main():
           f"{dropped} without a usable ISO code)")
 
     print("\nValidation")
-    report("geometry small enough to inline", size < 400_000, f"{size / 1024:.0f} KB")
+    # Roughly 110 KB over the wire once Pages gzips it. Both pages fetch it.
+    report("geometry small enough to ship", size < 600_000, f"{size / 1024:.0f} KB")
     report("point reduction", points_out < points_in,
            f"{points_in:,} -> {points_out:,} ({points_out / points_in:.0%})")
-    report("country count sane", 150 < len(countries) < 260, f"{len(countries)} countries")
+    report("country count sane", 200 < len(countries) < 280, f"{len(countries)} countries")
+
+    # The small states are the reason for the per-ring tolerance; if the
+    # adaptive step regresses they vanish silently and the map still looks fine.
+    tiny = {"SGP": "Singapore", "HKG": "Hong Kong", "MLT": "Malta",
+            "LUX": "Luxembourg", "BHR": "Bahrain", "CYP": "Cyprus"}
+    have = {c["id"] for c in countries}
+    missing = [n for k, n in tiny.items() if k not in have]
+    report("small reserve holders kept", not missing,
+           ", ".join(missing) if missing else "Singapore, Hong Kong, Malta, Luxembourg, Bahrain, Cyprus")
+
+    # Enclaves only come out as holes if the hole rings survived.
+    zaf = next((c for c in countries if c["id"] == "ZAF"), None)
+    report("holes preserved", bool(zaf) and len(zaf["r"]) > 1,
+           f"South Africa has {len(zaf['r']) if zaf else 0} rings (Lesotho is one of them)")
 
     # Centroids must land inside a plausible box for a few known shapes; this is
     # the check that catches a lat/lon swap or a broken largest-ring pick.

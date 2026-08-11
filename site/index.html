@@ -29,11 +29,20 @@
       <h2>Where the reserves are held</h2>
       <p class="asset-tag is-asset">Assets — what countries hold</p>
       <p class="dek">
-        One circle per country, area proportional to the reserves it holds.
-        The <span class="ink-track">orange track</span> is the centre of gravity of
+        One circle per country, area proportional to the reserves it holds and
+        cut into what those reserves are made of: <span class="ink-gold">gold at
+        market</span> and <span class="ink-fx">everything else</span>. The
+        <span class="ink-track">orange track</span> is the centre of gravity of
         the world's reserves — every holder treated as a point mass at its own
         centroid, averaged on the sphere. It starts in the mid-Atlantic and ends
         in Central Asia.
+      </p>
+      <p class="dek">
+        The wedges divide the map in a way the sizes do not. The United States
+        holds <strong>75%</strong> of its reserves in gold, Germany 74%, France
+        72%, Portugal 76%. China holds 5.5%, Korea 2.1%. The countries that
+        accumulated reserves in the last thirty years hold other people's money;
+        the countries that ran the old system still hold metal.
       </p>
       <p class="dek">
         The map looks straight down on the <strong>North Pole</strong>. Every
@@ -93,11 +102,7 @@
 
     <div class="legend-row">
       <div class="legend" id="size-legend" aria-label="Circle size legend"></div>
-      <div class="legend keys">
-        <span class="key"><span class="swatch sw-bubble"></span>Reserves held</span>
-        <span class="key"><span class="swatch sw-track"></span>Centre of gravity</span>
-        <span class="key"><span class="swatch sw-issuer"></span>Reserve-currency issuer</span>
-      </div>
+      <div class="legend keys" id="key-legend" aria-label="Colour legend"></div>
     </div>
 
     <div class="readout" id="readout"></div>
@@ -153,6 +158,13 @@
       them. There are no arrows here for that reason.
     </p>
     <p>
+      Which is also what the wedges in the circles are not. Gold against
+      everything else is a split the World Bank publishes per country, so it can
+      be drawn. The blue is <strong>not gold</strong> — it is not
+      <em>dollars</em>. Nobody publishes that per country, and the difference
+      between those two readings is the whole subject of this section.
+    </p>
+    <p>
       There are two flows that <em>can</em> honestly be drawn, and they have a
       page of their own: <a href="flows.html">who holds US Treasuries</a> — a
       real country pair on both ends, monthly since 2000 — and which currency
@@ -200,8 +212,8 @@
         </tr>
         <tr>
           <td>Basemap</td>
-          <td><a href="https://www.naturalearthdata.com/">Natural Earth 1:110m</a>, public domain</td>
-          <td>177 countries, simplified to 78&nbsp;KB, drawn north-polar</td>
+          <td><a href="https://www.naturalearthdata.com/">Natural Earth 1:50m</a>, public domain</td>
+          <td>242 countries with their enclaves, 397&nbsp;KB, drawn north-polar</td>
         </tr>
       </tbody>
     </table>

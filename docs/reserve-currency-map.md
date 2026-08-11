@@ -20,7 +20,7 @@ is that the modern record has a hole in exactly the place the colonial one does
 | holdings | World Bank `FI.RES.TOTL.CD`, `FI.RES.XGLD.CD` | asset | reserves per country per year, gold separable | what currency any of it is in |
 | Treasury holdings | US Treasury TIC | asset of the holder, liability of the US | who holds US Treasuries, monthly | ownership behind the custodian |
 | banking positions | BIS locational statistics | liability, net | which way obligations run, by currency | who the creditor country is |
-| geometry | Natural Earth 1:110m | — | country outlines and centroids | — |
+| geometry | Natural Earth 1:50m | — | country outlines and centroids | — |
 
 The **side** column is the distinction the site now states outright, because
 without it the same country reads as two unrelated dots. The United States holds
@@ -130,6 +130,47 @@ only the official slice of a country's external assets and bank claims are only
 part of its external debt; differencing two differently-scoped stocks produces a
 confident number and misclassifies the biggest case in the data.
 
+## What a circle is made of
+
+Each country's circle has its area proportional to the reserves it holds and is
+cut into the two parts the World Bank publishes separately: gold at market, and
+everything else — foreign exchange, SDRs and the reserve position in the Fund.
+The split is available for **every one of the 9,489 country-years** in the
+extract, which is why it can be a wedge rather than a footnote.
+
+It divides the map in a way the sizes do not:
+
+| holder | reserves, 2024 | in gold |
+|---|---:|---:|
+| United States | $910bn | **75.0%** |
+| Germany | $378bn | **74.4%** |
+| France | $283bn | 72.3% |
+| Portugal | $42bn | 75.7% |
+| Russia | $608bn | 32.2% |
+| India | $643bn | 11.4% |
+| Switzerland | $909bn | 9.6% |
+| Japan | $1,231bn | 5.8% |
+| China | $3,456bn | **5.5%** |
+| Korea | $418bn | **2.1%** |
+
+The countries that accumulated reserves over the last thirty years hold other
+people's money. The countries that ran the system before 1971 still hold metal,
+and mostly the same metal — these are stocks that have barely moved since the
+London Gold Pool closed.
+
+Two things to keep straight about the wedge. **Gold is at market**, so a
+country's gold slice grows when the gold price rises and it has not touched an
+ounce; this is a value, never a quantity, and 2024 was a strong year for the
+price. And **this is not the currency split** — that is the one thing COFER
+will not give per country, and the section above is about why. Blue means
+"not gold", not "dollars".
+
+Colours are validated slots 1 and 4 of the project palette, blue against amber:
+worst adjacent ΔE 29.6 under tritanopia, 31.5 under protanopia, against a
+target of 8. The amber sits at 2.11:1 against the light surface, below the 3:1
+line, which obliges relief — so the share is a number in the tooltip and a
+column in the table as well as an angle on the map.
+
 ## The centre of gravity
 
 The one figure here that is computed rather than reported. Each country is
@@ -141,11 +182,11 @@ which would invert the result.
 
 | year | centre | reporters | total held |
 |---|---|---|---|
-| 1960 | 62.3°N, 35.9°W — mid-Atlantic | 87 | $0.1tn |
-| 1980 | 57.0°N, 2.9°W — the Channel | 127 | $1.0tn |
-| 2000 | 59.0°N, 79.0°E — western Siberia | 169 | $2.1tn |
-| 2014 | 48.9°N, 83.7°E — the Altai | 176 | $12.6tn |
-| 2024 | 54.1°N, 73.9°E — western Siberia | 164 | $14.9tn |
+| 1960 | 62.4°N, 35.9°W — mid-Atlantic | 87 | $0.1tn |
+| 1980 | 57.0°N, 3.0°W — the Channel | 127 | $1.0tn |
+| 2000 | 59.3°N, 79.1°E — western Siberia | 169 | $2.1tn |
+| 2014 | 49.0°N, 83.8°E — the Altai | 176 | $12.6tn |
+| 2024 | 54.3°N, 73.9°E — western Siberia | 164 | $14.9tn |
 
 The track moves 110° east between 1960 and 2024 and then, after 2014, comes back
 west a little: China's reserves peaked at $4.0tn in 2014 and the rest of the
@@ -233,7 +274,15 @@ Three more consequences worth knowing before editing any of this:
   `arcPath(a, b, 1)` and `arcPath(b, a, −1)` trace the same curve in opposite
   directions — which is how the net-direction arrowheads change ends without the
   line moving.
-- **Antarctica is still skipped, for a new reason.** It used to be dropped
+- **The basemap is 1:50m, and the tolerance is per ring.** 110m was chosen when
+  the map did not zoom; at the Europe view its 0.30° simplification is a
+  three-pixel error on every coastline, and it has no polygon at all for most
+  of the small states. 50m simplified at `min(0.10°, span / 25)` is 397 KB, or
+  131 KB once Pages gzips it, and keeps all 242 countries — a flat tolerance
+  coarse enough to hit that size drops forty of them, Singapore and Malta and
+  Luxembourg among them. Holes are kept too, so Lesotho is a hole in South
+  Africa rather than something South Africa paints over; the page fills with
+  `fill-rule: evenodd`, which needs no assumption about winding order.
   because it took half a cropped rectangle. Now it is dropped because its ring
   closes along the line of 90°S, and this projection stretches that line into the
   entire rim: the continent would be drawn as a disc covering the map. It holds
@@ -276,7 +325,7 @@ fails. The checks that matter:
 | BIS net equals claims minus liabilities | 181 countries reconcile |
 | net direction runs both ways | 87 net debtors, 94 net creditors |
 
-36 checks in total. Two are worth keeping.
+34 checks in total. Two are worth keeping.
 
 The World Bank's country-level reserves and the IMF's world total are compiled
 by different institutions from different returns; that they agree within 6% in
@@ -323,9 +372,11 @@ fetches three JSON files and will not run from `file://`.
   builds a context from certifi and falls back to `curl`.
 - **The World Bank API times out on large pages.** `per_page=2000` with
   pagination works; `per_page=25000` in one request does not.
-- **Natural Earth 110m has no polygon for 25 reporters**, including Singapore
-  ($432bn) and Hong Kong. They are placed from the World Bank's own capital
-  coordinates and carry a `shape: 0` flag; dropping them would have quietly
+- **A country with no polygon still has to be placed.** At 110m, 25 reporters
+  had none, including Singapore ($432bn) and Hong Kong; at 50m with the
+  per-ring tolerance it is down to one, Kosovo, which Natural Earth files
+  without an ISO code. They are placed from the World Bank's own capital
+  coordinates and carry a `shape: 0` flag. Dropping them would have quietly
   removed a major holder from the map and biased the centroid west.
 - **Bermuda holds $101bn of Treasuries and reports no official reserves**, so it
   is in neither gazetteer. `build_flows_data.py` fetches the one missing

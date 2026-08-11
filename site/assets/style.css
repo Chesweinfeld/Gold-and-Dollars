@@ -25,9 +25,14 @@
   --s-other: #b4b2aa;
 
   --land:        #ececE6;
-  --land-edge:   #dcdbd3;
+  --land-edge:   #bdbcb1;
   --bubble:      #2a78d6;
   --bubble-fill: rgba(42, 120, 214, 0.42);
+  /* the two things a country's reserves are made of, in validated slots 1 and
+     4 — blue against amber is the pair that survives every kind of colour
+     blindness (worst adjacent ΔE 29.6) */
+  --gold:        #eda100;
+  --gold-fill:   rgba(237, 161, 0, 0.50);
 
   --radius: 10px;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -55,9 +60,11 @@
     --s-other: #6d6b65;
 
     --land:        #26262a;
-    --land-edge:   #34343a;
+    --land-edge:   #4b4b55;
     --bubble:      #3987e5;
     --bubble-fill: rgba(57, 135, 229, 0.40);
+    --gold:        #c98500;
+    --gold-fill:   rgba(201, 133, 0, 0.52);
   }
 }
 
@@ -114,6 +121,8 @@ body {
 }
 .dek { margin: 0 0 1.1rem; max-width: 68ch; color: var(--ink-2); font-size: .95rem; }
 .ink-track { color: var(--s2); font-weight: 600; }
+.ink-gold  { color: var(--gold); font-weight: 600; }
+.ink-fx    { color: var(--bubble); font-weight: 600; }
 
 /* ── controls: one row above everything they scope ────────────────── */
 
@@ -235,13 +244,20 @@ input[type="range"] {
   stroke-width: 2.4;
   stroke-linejoin: round;
 }
+/* evenodd, so an enclave is a hole rather than something the surrounding
+   country paints over — no assumption about ring winding order. */
 .land path {
   fill: var(--land);
+  fill-rule: evenodd;
   stroke: var(--land-edge);
-  stroke-width: .3;
+  stroke-width: .45;
   stroke-linejoin: round;
 }
 
+/* Each country is a circle whose area is its reserves, cut into the two things
+   reserves are made of. Foreign exchange is the whole circle and gold is a
+   wedge laid over it, which means the wedge's own outline draws both the
+   boundary between the slices and the gold share of the rim. */
 .bubble {
   fill: var(--bubble-fill);
   stroke: var(--bubble);
@@ -249,7 +265,15 @@ input[type="range"] {
   /* the 2px surface ring that keeps overlapping marks legible */
   paint-order: stroke;
 }
-.bubble.is-hot { stroke-width: 1.4; }
+.bubble.is-gold { fill: var(--gold-fill); stroke: var(--gold); }
+.slice-gold {
+  fill: var(--gold-fill);
+  stroke: var(--gold);
+  stroke-width: .6;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+.bub.is-hot .bubble, .bub.is-hot .slice-gold { stroke-width: 1.4; }
 .hit { fill: transparent; cursor: pointer; }
 
 .track { fill: none; stroke: var(--s2); stroke-width: 1.1; stroke-linecap: round; }
@@ -315,6 +339,7 @@ input[type="range"] {
 .key { display: inline-flex; align-items: center; gap: .4rem; }
 .swatch { width: 11px; height: 11px; border-radius: 50%; flex: none; }
 .sw-bubble { background: var(--bubble-fill); border: 1px solid var(--bubble); }
+.sw-gold   { background: var(--gold-fill); border: 1px solid var(--gold); }
 .sw-track  { background: var(--s2); }
 .sw-issuer { background: transparent; border: 1.5px solid var(--ink); opacity: .75; border-radius: 2px; transform: rotate(45deg); }
 .legend svg { display: inline-block; width: auto; height: auto; vertical-align: middle; overflow: visible; }

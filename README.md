@@ -94,7 +94,14 @@ of each other. The zoom is a camera and not a filter — it enlarges the globe a
 frames a window, leaving every circle and arc width the size it was, so the
 marks stay comparable with the ones now off the frame.
 
-`src/reserves/` rebuilds all of it from four public APIs, 36 validation checks.
+On the holdings map each circle is also cut into what the reserves are made of:
+gold at market against everything else. That split divides the map in a way the
+sizes do not — **the United States holds 75% of its reserves in gold, Germany
+74%, France 72%; China holds 5.5% and Korea 2.1%.** The countries that
+accumulated reserves in the last thirty years hold other people's money; the
+ones that ran the old system still hold metal.
+
+`src/reserves/` rebuilds all of it from four public APIs, 34 validation checks.
 See `docs/reserve-currency-map.md`.
 
 ## Findings
@@ -204,7 +211,7 @@ join.
 | World Bank development indicators | public API — **CC-BY 4.0** |
 | US Treasury TIC | **US public domain** (work of the federal government) |
 | BIS locational banking statistics | public API — © BIS, reuse with attribution |
-| Natural Earth 1:110m | **public domain** |
+| Natural Earth 1:50m | **public domain** |
 
 Full citations:
 
