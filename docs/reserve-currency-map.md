@@ -180,13 +180,50 @@ South Pole, one point opened out into a whole circle. Everything the data
 contains falls inside 91% of that radius — New Zealand is the outermost thing on
 the map — so the worst of it happens where there is nothing to see.
 
-Three consequences worth knowing before editing any of this:
+### East runs anticlockwise, and it is not a choice
+
+Seen from above the North Pole the Earth turns anticlockwise — the angular
+velocity vector points north, and rotation carries a point east — so with
+Greenwich at the top, 90°E is at nine o'clock and the Americas are on the right.
+
+Putting east clockwise instead reproduces the familiar left-to-right order of a
+Mercator map, which is exactly why it is easy to ship by accident, and it
+mirrors every coastline while doing it. The first version of this projection had
+that bug. **Check any change to `project` against the NSIDC polar grid**, whose
+standard layout with 45°W pointing down is Alaska left, Canada bottom-left,
+Greenland bottom, Scandinavia right — the mirrored version puts all four on the
+opposite side.
+
+### The zoom is a camera, not a filter
+
+A view in `VIEWS` sets `disc`, the radius of the whole globe in viewBox units,
+and which meridian points up, and then frames a window on the result. The window
+stays 430 units wide in every view and the stylesheet caps it at 820px, so one
+unit is 1.9 pixels whichever view is showing.
+
+That is the whole point. Zooming enlarges the geography and leaves every circle,
+arc width and label at the size it was, because those encode values rather than
+distances — a European circle stays comparable with the Chinese one now outside
+the frame. Nothing is filtered: the readouts and tables under each map still
+describe the world, and arcs still run to wherever they run, with the ends that
+fall outside the window simply outside it. The legends say so when zoomed.
+
+`lonUp` for a regional view is its central meridian minus 180, which puts the
+region at the *bottom* of the enlarged disc. Down there the outward direction is
+south and anticlockwise reads rightwards, so a regional view comes out the
+normal way up with east to the right, without rotating anything — which matters,
+because rotating a group would rotate the text with it.
+
+Three more consequences worth knowing before editing any of this:
 
 - **A segment that is straight in longitude and latitude is a curve here.** Two
   coastline points twenty degrees apart in longitude lie on an arc of a
   parallel, and joining them with a chord visibly cuts the corner. `projectRing`
   subdivides anything longer than 4° of longitude before projecting; north–south
   segments need no help, because meridians really are straight radial lines.
+  The 4° threshold is set by the regional views, not the globe — at world scale
+  the error is a fraction of a unit, and a zoom multiplies it by three and a
+  half.
 - **The flow arcs are sampled great circles, not curves between two projected
   points.** This is not decoration. A straight line drawn on this map from
   Washington to Canberra runs over Siberia. `geoLine` interpolates on the sphere

@@ -43,7 +43,7 @@ function eastward(track, from, to) {
 
 /* ── state ────────────────────────────────────────────────────────── */
 
-const state = { year: 2024, measure: 'total', playing: false, timer: null };
+const state = { year: 2024, measure: 'total', view: 'world', playing: false, timer: null };
 let W = null;   // world.json
 let H = null;   // holders.json
 let C = null;   // cofer.json
@@ -101,20 +101,24 @@ function drawBubbles() {
   return rows;
 }
 
-/* Label placement only — London, Frankfurt and Bern are within eleven units of
- * each other here, and so are Washington and Ottawa, which the pole aspect
- * stacks along one ray instead of one above the other. Purely presentational;
- * the positions themselves come from the data file. */
+/* Label placement only, and only for the whole-globe view — London, Frankfurt
+ * and Bern are within eleven units of each other there, and so are Washington
+ * and Ottawa, which the pole aspect stacks along one ray instead of one above
+ * the other. Note which side each label sits on: east runs anticlockwise here,
+ * so Frankfurt is to the *left* of London. Zoomed in, nothing collides and a
+ * plain label above the mark is better. Purely presentational; the positions
+ * themselves come from the data file. */
 const ISSUER_LABEL = {
-  USD: { dx: -4.6, dy: 2.4, anchor: 'end' },
-  CAD: { dx: 4.6, dy: -2.6, anchor: 'start' },
-  GBP: { dx: -4.6, dy: 1.9, anchor: 'end' },
-  EUR: { dx: 4.8, dy: 2.2, anchor: 'start' },
-  CHF: { dx: 4.8, dy: -2.2, anchor: 'start' },
+  USD: { dx: 4.6, dy: 2.4, anchor: 'start' },
+  CAD: { dx: -4.6, dy: -2.6, anchor: 'end' },
+  GBP: { dx: 4.6, dy: 1.9, anchor: 'start' },
+  EUR: { dx: -4.8, dy: 2.2, anchor: 'end' },
+  CHF: { dx: -4.8, dy: -2.2, anchor: 'end' },
   CNY: { dx: 0, dy: 9.2, anchor: 'middle' },
-  JPY: { dx: 5.5, dy: 3.4, anchor: 'start' },
+  JPY: { dx: -5.5, dy: 3.4, anchor: 'end' },
   AUD: { dx: 0, dy: 8.4, anchor: 'middle' },
 };
+const ISSUER_LABEL_PLAIN = { dx: 0, dy: -5.2, anchor: 'middle' };
 
 function drawIssuers() {
   const g = el('issuers');
@@ -125,7 +129,7 @@ function drawIssuers() {
       x: x - 2.6, y: y - 2.6, width: 5.2, height: 5.2,
       transform: `rotate(45 ${x} ${y})`, class: 'issuer',
     }, g);
-    const off = ISSUER_LABEL[iss.code] || { dx: 0, dy: -4.4, anchor: 'middle' };
+    const off = (state.view === 'world' && ISSUER_LABEL[iss.code]) || ISSUER_LABEL_PLAIN;
     const t = svg('text', {
       x: x + off.dx, y: y + off.dy, class: 'issuer-label', 'text-anchor': off.anchor,
     }, g);
@@ -246,7 +250,11 @@ function drawSizeLegend() {
 
   const cap = document.createElement('span');
   cap.className = 'legend-cap';
-  cap.textContent = 'Circle area ∝ reserves';
+  // Zoomed in, say so: the circles are not rescaled to the region, which is
+  // what makes a European circle comparable with the Chinese one off-frame.
+  cap.textContent = state.view === 'world'
+    ? 'Circle area ∝ reserves'
+    : 'Circle area ∝ reserves, on the same world scale as the whole globe';
   host.appendChild(cap);
 
   const marks = [100, 1000, 3000];
@@ -514,6 +522,16 @@ function initCoferHover(s, series, x, y, m, pw, ph) {
 
 /* ── wiring ───────────────────────────────────────────────────────── */
 
+/* Everything that moves when the view changes. The legend circles do not
+ * resize — they carry values, and a zoom is a camera move — but their caption
+ * changes to say so. */
+function redrawMap() {
+  drawBasemap(el('graticule'), el('land'), W);
+  drawIssuers();
+  drawSizeLegend();
+  render();
+}
+
 function render() {
   el('year-out').textContent = state.year;
   el('year').value = state.year;
@@ -569,12 +587,10 @@ async function main() {
   slider.max = H.years[H.years.length - 1];
   state.year = H.complete_through;
 
-  drawBasemap(el('graticule'), el('land'), W);
-  drawIssuers();
   computeSizeScale();
-  drawSizeLegend();
   initHover();
-  render();
+  fillZoomSelect(el('zoom'));
+  redrawMap();
 
   drawCofer();
   fillSourceCells();
@@ -589,6 +605,11 @@ async function main() {
     computeSizeScale();
     drawSizeLegend();
     render();
+  });
+  el('zoom').addEventListener('change', (ev) => {
+    if (!setView(ev.target.value)) return;
+    state.view = ev.target.value;
+    redrawMap();
   });
   el('play').addEventListener('click', play);
 }

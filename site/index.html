@@ -40,7 +40,11 @@
         reserve currency but the Australian dollar is issued north of the
         tropics, as is every one of the twenty largest holders, so the pole is
         the middle of this subject rather than its edge — and the track's drift
-        east becomes what it physically is, a rotation.
+        east becomes what it physically is, a rotation. Seen from above the
+        pole the Earth turns anticlockwise, so <strong>east runs
+        anticlockwise</strong> here too: the Americas are on the right, Asia on
+        the left, and the track sweeps leftwards as it goes east. Zoom to
+        Europe for the dozen holders that overlap at this scale.
       </p>
     </div>
 
@@ -52,6 +56,10 @@
           <option value="fx">Foreign exchange only</option>
           <option value="gold">Gold only, at market value</option>
         </select>
+      </div>
+      <div class="control">
+        <label for="zoom">Zoom</label>
+        <select id="zoom" class="zoom-select"></select>
       </div>
       <div class="control grow">
         <label for="year">Year <output id="year-out">2024</output></label>
@@ -205,6 +213,14 @@
       draws circles rather than colouring countries in. Shape is what pays for
       that: it distorts further out, and Australia and New Zealand, at about 90%
       of the radius, are smeared around the rim. Antarctica is not drawn.
+    </p>
+    <p class="fine">
+      The zoom is a camera, not a filter. It enlarges the globe and frames a
+      window on it, leaving every circle, arc width and label the size it was —
+      so a European circle stays comparable with the Chinese one now outside the
+      frame, and the figures beneath the map go on describing the world. Europe
+      is framed on 12°E, which puts it at the bottom of the enlarged disc, where
+      north comes out up and east comes out right.
     </p>
     <p class="fine">
       Every figure on this page is rebuilt from those sources by the scripts in

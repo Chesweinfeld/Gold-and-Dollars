@@ -209,8 +209,13 @@ input[type="range"] {
 /* The globe is a disc, so its figure is square. Capping it keeps the map at
    the 1.9 pixels per viewBox unit every stroke and label was drawn for, and
    centring it under a wider column reads as deliberate rather than stranded —
-   the legend beneath is held to the same width so the two line up. */
-.figure.globe svg { max-width: 820px; margin-inline: auto; }
+   the legend beneath is held to the same width so the two line up. A regional
+   zoom keeps the same 430-unit width and shortens the viewBox, so the figure
+   changes height and nothing changes size.
+
+   overflow must be hidden, unlike the charts: a zoomed view has the rest of the
+   world sitting just outside its window, and SVG would happily paint it. */
+.figure.globe svg { max-width: 820px; margin-inline: auto; overflow: hidden; }
 .figure.globe + .legend-row { max-width: 820px; margin-inline: auto; }
 
 /* Keyed by class, not id: both pages draw this basemap, and an unstyled

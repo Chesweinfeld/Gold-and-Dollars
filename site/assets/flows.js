@@ -36,6 +36,19 @@ function monthLabel(p) {
 let W = null;
 let F = null;
 
+/* One projection state for the page, so switching tabs never lands you on a
+ * differently framed map than the one you just left. */
+function applyView(name) {
+  if (!setView(name)) return;
+  for (const s of document.querySelectorAll('.zoom-select')) s.value = name;
+  drawBasemap(el('tic-grat'), el('tic-land'), W);
+  drawBasemap(el('bis-grat'), el('bis-land'), W);
+  ticLegend();
+  bisLegend();
+  drawTic();
+  drawBis();
+}
+
 /* ── shared tooltip plumbing ──────────────────────────────────────── */
 
 function showTip(tip, mapEl, x, y, html) {
@@ -142,9 +155,14 @@ function drawTic() {
     `</tbody>`;
 }
 
+/* Zoomed in, the far end of every arc is off the map. Say so rather than
+ * leaving the lines running out of the frame unexplained. */
 function ticLegend() {
   el('tic-legend').innerHTML =
-    `<span class="legend-cap">Arc width ∝ value held; scaled to the largest holder each month</span>`;
+    `<span class="legend-cap">Arc width ∝ value held; scaled to the largest holder each month` +
+    (viewName === 'world' ? '' :
+      ' · the United States lies outside this frame, and every arc runs to it') +
+    `</span>`;
 }
 
 /* ─────────────────────────────  BIS  ───────────────────────────── */
@@ -263,7 +281,11 @@ function bisLegend() {
       `<span class="key"><span class="chip c-${k}"></span>${F.bis.currencies[k].name}` +
       ` <span style="color:var(--ink-muted)">${F.bis.currencies[k].seat}</span></span>`).join('') +
     `<span class="legend-cap">Arrow points at whoever owes on net; ` +
-    `width ∝ the size of the net position</span>`;
+    `width ∝ the size of the net position` +
+    (viewName === 'world' ? '' :
+      ' · only the euro is seated inside this frame, and arcs crossing it may ' +
+      'have both ends elsewhere') +
+    `</span>`;
 }
 
 /* ── play loops ───────────────────────────────────────────────────── */
@@ -313,9 +335,6 @@ async function main() {
   ]);
   W = world; F = flows;
 
-  drawBasemap(el('tic-grat'), el('tic-land'), W);
-  drawBasemap(el('bis-grat'), el('bis-land'), W);
-
   tic.i = F.tic.periods.length - 1;
   bis.i = F.bis.periods.length - 1;
 
@@ -326,10 +345,11 @@ async function main() {
   bisSlider.max = F.bis.periods.length - 1;
   bisSlider.value = bis.i;
 
-  ticLegend();
-  bisLegend();
-  drawTic();
-  drawBis();
+  for (const s of document.querySelectorAll('.zoom-select')) {
+    fillZoomSelect(s);
+    s.addEventListener('change', (e) => applyView(e.target.value));
+  }
+  applyView('world');
 
   ticPlay = makePlay(tic, drawTic,
     { btn: 'tic-play', label: 'tic-play-label' },

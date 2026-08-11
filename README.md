@@ -85,7 +85,14 @@ as is every one of the twenty largest holders, so a rectangular map splits the
 one neighbourhood that matters across two edges. On the pole, the centre of
 gravity's 110° east reads as the rotation it physically is, and the flow arcs
 can be real great circles — Tokyo to Washington over the Arctic, which is the
-way round the world you would actually go.
+way round the world you would actually go. Seen from above the pole the Earth
+turns anticlockwise, so east runs anticlockwise and the Americas are on the
+right; drawing them on the left mirrors every coastline.
+
+Each map zooms to Europe, where a dozen holders otherwise sit inside ten units
+of each other. The zoom is a camera and not a filter — it enlarges the globe and
+frames a window, leaving every circle and arc width the size it was, so the
+marks stay comparable with the ones now off the frame.
 
 `src/reserves/` rebuilds all of it from four public APIs, 36 validation checks.
 See `docs/reserve-currency-map.md`.

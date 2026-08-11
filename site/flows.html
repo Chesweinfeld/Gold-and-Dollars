@@ -73,6 +73,10 @@
           <option value="99">All named holders</option>
         </select>
       </div>
+      <div class="control">
+        <label for="tic-zoom">Zoom</label>
+        <select id="tic-zoom" class="zoom-select"></select>
+      </div>
     </div>
 
     <figure class="figure globe">
@@ -146,6 +150,10 @@
           <option value="EUR">Euro only</option>
           <option value="JPY">Japanese yen only</option>
         </select>
+      </div>
+      <div class="control">
+        <label for="bis-zoom">Zoom</label>
+        <select id="bis-zoom" class="zoom-select"></select>
       </div>
     </div>
 
@@ -242,6 +250,16 @@
       rather than as the four corners of a page. The projection is equal-area,
       so a country's share of the map is its share of the Earth; shape is what
       pays for it, smearing towards the rim, which is the South Pole.
+    </p>
+    <p>
+      Two things to expect from it. Seen from above the pole the Earth turns
+      anticlockwise, so <strong>east runs anticlockwise</strong> and the
+      Americas are on the right — putting them on the left would reproduce the
+      familiar order of a Mercator map and mirror every coastline doing it. And
+      the <strong>zoom is a camera, not a filter</strong>: it enlarges the globe
+      and frames a window, so lines keep their widths, arcs keep running to
+      wherever they run, and the ends that fall outside the window are simply
+      outside it.
     </p>
     <h3>Coverage is not constant</h3>
     <p>

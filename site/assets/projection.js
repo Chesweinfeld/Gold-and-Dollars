@@ -14,8 +14,16 @@
  * landmass can masquerade as importance, which is the same reason the holdings
  * map draws circles instead of colouring countries in. The price is shape: it
  * smears progressively outwards, and the rim is the South Pole, one point
- * stretched into a whole circle. Everything the data actually contains falls
- * inside 91% of that radius.
+ * stretched into a whole circle.
+ *
+ * EAST RUNS ANTICLOCKWISE, and that is not a choice. Seen from above the North
+ * Pole the Earth turns anticlockwise — the angular velocity points north, and
+ * rotation carries a point east — so with Greenwich at the top, 90°E is at nine
+ * o'clock and the Americas are on the right. Putting east clockwise reproduces
+ * the familiar left-to-right order of a Mercator map and mirrors every
+ * coastline while doing it. Check any change here against the NSIDC polar grid,
+ * where 45°W points down: Alaska left, Canada bottom-left, Greenland bottom,
+ * Scandinavia right.
  */
 
 'use strict';
@@ -32,29 +40,77 @@ function svg(tag, attrs, parent) {
 const D2R = Math.PI / 180;
 const R2D = 180 / Math.PI;
 
-/* Radius of the entire globe, in viewBox units. 430 across at the 820px cap in
- * the stylesheet works out at 1.9 pixels per unit — the same as the rectangular
- * map it replaces, so every stroke width and font size below is still the size
- * it was drawn to be. */
-const DISC = 210;
-const VIEWBOX = '-215 -215 430 430';
+/* ── views ────────────────────────────────────────────────────────────
+ *
+ * A view is a camera, never a filter: it changes `disc` — the radius of the
+ * whole globe in viewBox units — and which meridian points up, and then frames
+ * a window on the result. The window itself stays 430 units wide in every view,
+ * and the stylesheet caps it at 820px, so one unit is 1.9 pixels whichever view
+ * is showing. That is the point: zooming in spreads the geography out and
+ * leaves every circle, arc width and label exactly the size it was, because
+ * those encode data rather than distance.
+ *
+ * `lonUp` for a regional view is its central meridian minus 180, which puts the
+ * region at the bottom of the disc. Down there the outward direction is south
+ * and anticlockwise reads rightwards, so the detail comes out the normal way up
+ * with east to the right. */
 
-/* Which meridian points up the page. Greenwich up puts the Americas on the
- * left, Europe at the top and Asia on the right, which is the west-to-east
- * reading order a reader already has from rectangular maps. */
-const LON_UP = 0;
+const VIEWS = {
+  world: {
+    label: 'Whole globe',
+    disc: 210,
+    lonUp: 0,
+    viewBox: [-215, -215, 430, 430],
+    parallels: [60, 30, 0, -30, -60],
+    meridians: { step: 30, from: -180, to: 150, top: 84, bottom: -90 },
+    rim: true,
+    labels: [
+      { lat: 60, lon: -170, text: '60°N' },
+      { lat: 0, lon: -170, text: 'Equator' },
+      { lat: -30, lon: -170, text: '30°S' },
+    ],
+  },
+  /* Europe is where both maps are least readable — a dozen holders inside ten
+   * units of each other, and on the flows page a pile of arrowheads on top of
+   * them. 12°E is the mean longitude of the European reporters; the frame runs
+   * from about Iceland to the Urals and from the Barents Sea to the Sahara. */
+  europe: {
+    label: 'Europe',
+    disc: 750,
+    lonUp: 12 - 180,
+    viewBox: [-215, 95, 430, 280],
+    parallels: [70, 60, 50, 40, 30],
+    meridians: { step: 10, from: -60, to: 80, top: 78, bottom: 25 },
+    rim: false,
+    labels: [
+      { lat: 60, lon: -24, text: '60°N' },
+      { lat: 50, lon: -24, text: '50°N' },
+      { lat: 40, lon: -24, text: '40°N' },
+    ],
+  },
+};
+
+let VIEW = VIEWS.world;
+let viewName = 'world';
+
+function setView(name) {
+  if (!VIEWS[name]) return false;
+  VIEW = VIEWS[name];
+  viewName = name;
+  return true;
+}
 
 /* Distance from the pole. ρ = 2R·sin(colatitude / 2) is what makes it
  * equal-area; the equator lands at 71% of the radius and therefore takes half
  * the disc, as it should. */
 function rho(lat) {
-  return DISC * Math.sin((90 - lat) * D2R / 2);
+  return VIEW.disc * Math.sin((90 - lat) * D2R / 2);
 }
 
 function project(lon, lat) {
   const r = rho(lat);
-  const t = (lon - LON_UP) * D2R;
-  return [r * Math.sin(t), -r * Math.cos(t)];
+  const t = (lon - VIEW.lonUp) * D2R;
+  return [-r * Math.sin(t), -r * Math.cos(t)];
 }
 
 function fmt(pts) {
@@ -63,21 +119,12 @@ function fmt(pts) {
 
 /* ── basemap ──────────────────────────────────────────────────────── */
 
-const PARALLELS = [60, 30, 0, -30, -60];
-const LAT_LABELS = [
-  { lat: 60, text: '60°N' },
-  { lat: 0, text: 'Equator' },
-  { lat: -30, text: '30°S' },
-];
-/* The line the latitude labels run down. 170°W crosses the Bering Sea and then
- * nothing but open Pacific, so none of the three ever lands on a country. */
-const LABEL_LON = -170;
-
 /* A straight segment in longitude and latitude is a curve on this map: two
  * coastline points twenty degrees apart in longitude lie on an arc of a
  * parallel, and joining them with a chord cuts the corner off — visibly, out
- * near the rim. Subdivide the long ones before projecting. Segments running
- * north–south need no help, because meridians really are straight lines here. */
+ * near the rim, and everywhere once a regional view magnifies it. Subdivide the
+ * long ones before projecting. Segments running north–south need no help,
+ * because meridians really are straight lines here. */
 const MAX_STEP = 4;   // degrees of longitude
 
 function projectRing(ring) {
@@ -100,31 +147,34 @@ function projectRing(ring) {
 
 /* Draws the graticule and the land into two existing groups, and sizes the
  * <svg> that holds them, so the viewBox has one definition rather than one per
- * page. */
+ * page. Safe to call again after setView. */
 function drawBasemap(gratEl, landEl, world) {
   const owner = gratEl.ownerSVGElement || gratEl.closest('svg');
-  if (owner) owner.setAttribute('viewBox', VIEWBOX);
+  if (owner) owner.setAttribute('viewBox', VIEW.viewBox.join(' '));
   gratEl.textContent = '';
   landEl.textContent = '';
 
-  for (const lat of PARALLELS) {
+  // Parallels are true circles about the pole and meridians true radial lines,
+  // so both are exact rather than sampled.
+  for (const lat of VIEW.parallels) {
     svg('circle', {
       cx: 0, cy: 0, r: rho(lat).toFixed(2), class: lat === 0 ? 'eq' : null,
     }, gratEl);
   }
-  // Meridians stop short of the centre; twelve lines meeting at a point would
-  // read as a blot exactly where the centre-of-gravity track lives.
-  for (let lon = -180; lon < 180; lon += 30) {
-    const [x1, y1] = project(lon, 84);
-    const [x2, y2] = project(lon, -90);
-    svg('line', { x1: x1.toFixed(2), y1: y1.toFixed(2), x2: x2.toFixed(2), y2: y2.toFixed(2) }, gratEl);
+  const m = VIEW.meridians;
+  for (let lon = m.from; lon <= m.to; lon += m.step) {
+    const [x1, y1] = project(lon, m.top);
+    const [x2, y2] = project(lon, m.bottom);
+    svg('line', {
+      x1: x1.toFixed(2), y1: y1.toFixed(2), x2: x2.toFixed(2), y2: y2.toFixed(2),
+    }, gratEl);
   }
-  svg('circle', { cx: 0, cy: 0, r: DISC, class: 'rim' }, gratEl);
+  if (VIEW.rim) svg('circle', { cx: 0, cy: 0, r: VIEW.disc, class: 'rim' }, gratEl);
 
   // Latitude is the thing a reader loses first on a polar map, so three rings
-  // are named out over the empty Pacific.
-  for (const l of LAT_LABELS) {
-    const [x, y] = project(LABEL_LON, l.lat);
+  // are named. Every label sits over open ocean in its own view.
+  for (const l of VIEW.labels) {
+    const [x, y] = project(l.lon, l.lat);
     const t = svg('text', {
       x: x.toFixed(2), y: (y + 1.7).toFixed(2),
       class: 'grat-label', 'text-anchor': 'middle',
@@ -213,4 +263,17 @@ function arcPath(from, to, bow, trim) {
     pts[i] = back;
   }
   return fmt(pts);
+}
+
+/* Builds the zoom control's options from the view table, so a new view needs no
+ * markup on either page. */
+function fillZoomSelect(sel) {
+  sel.textContent = '';
+  for (const name in VIEWS) {
+    const o = document.createElement('option');
+    o.value = name;
+    o.textContent = VIEWS[name].label;
+    if (name === viewName) o.selected = true;
+    sel.appendChild(o);
+  }
 }
