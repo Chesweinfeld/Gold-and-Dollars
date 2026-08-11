@@ -128,6 +128,14 @@ def build_tic(pos, names):
 
 
 def build_bis(pos, names):
+    """Net position of the international banking system with each country.
+
+    net = claims on the country - liabilities to it. Positive means the country
+    owes the banking system on balance; negative means it is owed. This is the
+    only net direction the public data supports, and it is a net *position*
+    against the banking system as a whole, not a net bilateral pair — there is
+    no published lender-country by borrower-country matrix.
+    """
     iso3_of = iso2_to_iso3()
     by = {}
     periods = set()
@@ -137,8 +145,8 @@ def build_bis(pos, names):
             if not iso3 or iso3 not in pos:
                 continue
             periods.add(r["period"])
-            by.setdefault(iso3, {}).setdefault(r["currency"], {})[r["period"]] = \
-                float(r["usd_mn"])
+            by.setdefault(iso3, {}).setdefault(r["currency"], {}) \
+              .setdefault(r["position"], {})[r["period"]] = float(r["usd_mn"])
 
     # Annual snapshots keep the payload small; Q4 is the audited year-end and
     # the final period is carried so the page can show the latest reading.
@@ -149,16 +157,20 @@ def build_bis(pos, names):
 
     countries = []
     for iso3, cur in sorted(by.items()):
-        series = {}
+        rec = {"id": iso3, "name": names.get(iso3, iso3), "c": pos[iso3]}
         for code in ("USD", "EUR", "JPY", "TO1"):
-            series[code] = [
-                round(cur.get(code, {}).get(p, 0) / 1000, 2) for p in snaps
-            ]
-        if not any(series["TO1"]):
+            sides = cur.get(code, {})
+            cl = sides.get("claims", {})
+            li = sides.get("liabilities", {})
+            rec[code] = [round((cl.get(p, 0) - li.get(p, 0)) / 1000, 2) for p in snaps]
+        # Gross totals are kept for one currency only, so a reader can see the
+        # size of the balance sheet the net came out of without tripling the file.
+        gross = cur.get("TO1", {})
+        rec["cl"] = [round(gross.get("claims", {}).get(p, 0) / 1000, 2) for p in snaps]
+        rec["li"] = [round(gross.get("liabilities", {}).get(p, 0) / 1000, 2) for p in snaps]
+        if not any(rec["cl"]) and not any(rec["li"]):
             continue
-        countries.append({
-            "id": iso3, "name": names.get(iso3, iso3), "c": pos[iso3], **series,
-        })
+        countries.append(rec)
 
     return {
         "periods": snaps,
@@ -202,17 +214,19 @@ def main():
            f"{len(bis['countries'])} counterparties, {len(bis['periods'])} snapshots, "
            f"{bis['periods'][0]} to {bis['periods'][-1]}")
 
-    # A currency mix that summed past the total would mean the join went wrong.
-    worst, worst_id = 0.0, None
-    for c in bis["countries"]:
-        for i, tot in enumerate(c["TO1"]):
-            if tot < 1:
-                continue
-            f = (c["USD"][i] + c["EUR"][i] + c["JPY"][i]) / tot
-            if f > worst:
-                worst, worst_id = f, c["id"]
-    report("currency mix stays inside each country's total", worst < 1.05,
-           f"worst {worst:.1%} ({worst_id})")
+    # The net must be exactly the two published sides, not a re-derivation.
+    j = len(bis["periods"]) - 1
+    bad = [c["id"] for c in bis["countries"]
+           if abs((c["cl"][j] - c["li"][j]) - c["TO1"][j]) > 0.02]
+    report("net equals claims minus liabilities", not bad,
+           f"{len(bis['countries'])} countries reconcile"
+           + (f"; OFF {', '.join(bad[:5])}" if bad else ""))
+
+    # Both signs must be present, or the direction encoding is meaningless.
+    debt = [c for c in bis["countries"] if c["TO1"][j] > 0]
+    cred = [c for c in bis["countries"] if c["TO1"][j] < 0]
+    report("net direction runs both ways", debt and cred,
+           f"{len(debt)} net debtors, {len(cred)} net creditors to the banking system")
 
     last = len(tic["periods"]) - 1
     top = sorted(tic["holders"], key=lambda h: -(h["v"][last] or 0))[:5]
@@ -220,12 +234,15 @@ def main():
     for h in top:
         print(f"    {h['name']:<20} {h['v'][last]:8,.1f}")
 
-    j = len(bis["periods"]) - 1
-    big = sorted(bis["countries"], key=lambda c: -c["USD"][j])[:5]
-    print(f"\n  {bis['periods'][j]}: largest dollar-denominated claim stocks (US$ bn)")
-    for c in big:
-        print(f"    {c['name']:<20} {c['USD'][j]:8,.0f}   "
-              f"({c['USD'][j] / c['TO1'][j] * 100:.0f}% of its total)")
+    order = sorted(bis["countries"], key=lambda c: c["TO1"][j])
+    print(f"\n  {bis['periods'][j]}: net position with the international banking "
+          f"system (US$ bn, + = the country owes on balance)")
+    for c in order[-5:][::-1]:
+        print(f"    owes    {c['name']:<18} {c['TO1'][j]:+9,.0f}   "
+              f"(of which ${c['USD'][j]:+,.0f} in dollars)")
+    for c in order[:5]:
+        print(f"    is owed {c['name']:<18} {c['TO1'][j]:+9,.0f}   "
+              f"(of which ${c['USD'][j]:+,.0f} in dollars)")
 
     finish()
 

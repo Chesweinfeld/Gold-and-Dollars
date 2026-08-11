@@ -14,11 +14,20 @@ is that the modern record has a hole in exactly the place the colonial one does
 
 ## What is measured
 
-| layer | source | what it gives | what it withholds |
-|---|---|---|---|
-| composition | IMF COFER | share of world reserves by currency, quarterly | any country's own composition |
-| holdings | World Bank `FI.RES.TOTL.CD`, `FI.RES.XGLD.CD` | reserves per country per year, gold separable | what currency any of it is in |
-| geometry | Natural Earth 1:110m | country outlines and centroids | — |
+| layer | source | side | what it gives | what it withholds |
+|---|---|---|---|---|
+| composition | IMF COFER | asset | share of world reserves by currency, quarterly | any country's own composition |
+| holdings | World Bank `FI.RES.TOTL.CD`, `FI.RES.XGLD.CD` | asset | reserves per country per year, gold separable | what currency any of it is in |
+| Treasury holdings | US Treasury TIC | asset of the holder, liability of the US | who holds US Treasuries, monthly | ownership behind the custodian |
+| banking positions | BIS locational statistics | liability, net | which way obligations run, by currency | who the creditor country is |
+| geometry | Natural Earth 1:110m | — | country outlines and centroids | — |
+
+The **side** column is the distinction the site now states outright, because
+without it the same country reads as two unrelated dots. The United States holds
+$910bn of reserves and owes $9.27tn of Treasuries abroad and $3.96tn net to the
+banking system. That asymmetry is not an oddity to be explained away — it is
+what a reserve currency *is*. The issuer's money is everyone else's asset, so
+the issuer is structurally the debtor.
 
 ## The join that does not exist
 
@@ -64,24 +73,62 @@ Centers* and *Oil Exporters* as groups instead of their members, so the share
 of the total attributable to a named country runs from 71% at the low point to
 96% today. The page prints that share under the map and it moves as you scrub.
 
-### BIS: not a country pair at all
+### BIS: a net direction, not a country pair
 
-BIS locational banking statistics give cross-border bank claims on each
-counterparty country, split by the currency the claim is denominated in. That
-is the mechanism that makes a currency a reserve currency — if your obligations
-are in dollars you must hold dollars — but it is emphatically not a lender-to-
-borrower matrix.
+BIS locational banking statistics give cross-border bank positions with each
+counterparty country, split by the currency they are denominated in. That is the
+mechanism that makes a currency a reserve currency — if your obligations are in
+dollars you must hold dollars — but it is emphatically not a lender-to-borrower
+matrix.
 
-The public dataflow publishes `L_REP_CTY = 5A` only, the aggregate of all
-reporting countries. There is no published lender-country by borrower-country
-breakdown, so the arcs on this view run from a *currency's central bank* to the
-borrower and mean **denominated in**, never **lent by**. The page says so above
-the map. Available denominations are USD, EUR, JPY and an all-currency total;
-sterling and the franc are inside the total but not published separately at
-this level.
+Both sides are published, so the view shows the **net**: claims on a country
+minus liabilities to it. Positive means the country owes the international
+banking system on balance and the arrow points at the country; negative means it
+is owed and the arrow reverses. At 2026-Q1, 87 countries are net debtors and 94
+net creditors.
 
-At 2026-Q1: $47.6tn of cross-border claims outstanding, 46% written in dollars,
-32% in euro, 5% in yen.
+| | claims | liabilities | net |
+|---|---:|---:|---:|
+| US dollar | $21.80tn | $19.52tn | +$2.28tn |
+| Euro | $15.27tn | $13.91tn | +$1.36tn |
+| Japanese yen | $2.26tn | $1.25tn | +$1.01tn |
+| All currencies | $47.62tn | $41.99tn | +$5.64tn |
+
+Netting is what makes the map readable, and it is also what makes it
+incomplete — so both are on the page:
+
+- **It cuts the financial centres down to size.** London carries $7.2tn of gross
+  claims because it intermediates; the net position is a small fraction of that.
+  On gross the United Kingdom ranks second in the world and means almost nothing
+  by it.
+- **It hides the balance sheet.** $2tn against $1.9tn and $150bn against $50bn
+  both show as a $100bn arrow. Gross claims and gross liabilities are in the
+  tooltip and the table for exactly this reason.
+- **It is still not bilateral.** The public dataflow publishes `L_REP_CTY = 5A`
+  only, the aggregate of all reporting countries, so this is a net position
+  against the banking system *as a whole*. The arc begins at a currency's
+  central bank and means **denominated in**, never **lent by**.
+
+Available denominations are USD, EUR, JPY and an all-currency total; sterling
+and the franc sit inside the total but are not published separately at this
+level.
+
+### Why there is no full net international investment position
+
+The correctly-scoped net measure would be the IIP, and it is not obtainable at
+world scale from these APIs. `IMF.STA:IIPCC` — IIP by currency composition, and
+otherwise ideal for this subject — is reported by **22 countries**. `IMF.STA:BOP`
+covers 213 countries but holds balance-of-payments *flows*; its indicator
+codelist contains no position stocks. So the banking-system net above is the
+widest honest net available, and it is labelled as what it is rather than as an
+external balance sheet.
+
+This matters because a naive substitute is badly wrong. Reserves held minus
+cross-border bank claims owed puts **Japan at −$537bn**, reading as a net
+debtor, when Japan is the largest net creditor nation on earth. Reserves are
+only the official slice of a country's external assets and bank claims are only
+part of its external debt; differencing two differently-scoped stocks produces a
+confident number and misclassifies the biggest case in the data.
 
 ## The centre of gravity
 
@@ -143,8 +190,10 @@ fails. The checks that matter:
 | **TIC parts reproduce Treasury's printed Grand Total** | **worst month 1.0002, all 310 months** |
 | TIC foreign official ⊆ total | 0 months violate |
 | BIS named currencies ⊆ all-currency total | worst 102.0%, 3 of 15,893 past 100.5% |
+| BIS net equals claims minus liabilities | 181 countries reconcile |
+| net direction runs both ways | 87 net debtors, 94 net creditors |
 
-33 checks in total. Two are worth keeping.
+36 checks in total. Two are worth keeping.
 
 The World Bank's country-level reserves and the IMF's world total are compiled
 by different institutions from different returns; that they agree within 6% in

@@ -30,7 +30,7 @@
     </button>
     <button role="tab" id="tab-bis" aria-controls="panel-bis" aria-selected="false">
       Whose currency the world owes in
-      <span>by denomination · annual · 2000–2026</span>
+      <span>net direction · by denomination · 2000–2026</span>
     </button>
   </div>
 
@@ -38,6 +38,7 @@
   <section class="panel" id="panel-tic" role="tabpanel" aria-labelledby="tab-tic">
     <div class="panel-head">
       <h2>Who holds US Treasuries</h2>
+      <p class="asset-tag is-asset">An asset for the holder — and a liability of the United States</p>
       <p class="dek">
         Every arc is a real country pair: a foreign holder at one end, the United
         States at the other. Arc width is the value held. This is the only
@@ -100,17 +101,23 @@
   <section class="panel" id="panel-bis" role="tabpanel" aria-labelledby="tab-bis" hidden>
     <div class="panel-head">
       <h2>Whose currency the world owes in</h2>
+      <p class="asset-tag is-liability">Liabilities — what countries owe, net</p>
       <p class="dek">
-        Cross-border bank claims on each country, split by the currency the debt
-        is written in. This is what makes a currency a reserve currency: if your
-        obligations are in dollars, you must hold dollars. Arc colour is the
-        currency; width is the amount.
+        The international banking system's <strong>net</strong> position with
+        each country — what it is owed, minus what it owes — split by the
+        currency the debt is written in. This is what makes a currency a reserve
+        currency: if your obligations are in dollars, you must hold dollars. The
+        arrow points at whoever owes; width is the size of the net position.
       </p>
       <p class="warnline">
-        The arcs start at the currency's central bank because that is what the
-        colour means — <strong>denominated in</strong>, never <strong>lent
-        by</strong>. The BIS publishes no lender-country by borrower-country
-        matrix, so nobody can honestly draw that.
+        Two things the arrows do not say. The colour means
+        <strong>denominated in</strong>, never <strong>lent by</strong> — the
+        BIS publishes no lender-country by borrower-country matrix, so the arc
+        begins at a currency's central bank rather than at a creditor. And this
+        is a net position against the banking system <em>as a whole</em>, not a
+        bilateral pair: gross claims and gross liabilities are both in the
+        tooltip, because netting hides how large a balance sheet the number came
+        out of.
       </p>
     </div>
 
@@ -137,7 +144,23 @@
 
     <figure class="figure">
       <svg id="bis-map" viewBox="-272 -138 544 222" role="img" aria-labelledby="bis-title">
-        <title id="bis-title">Cross-border bank claims on each country by currency of denomination</title>
+        <title id="bis-title">Net position of the international banking system with each country, by currency of denomination</title>
+        <defs>
+          <!-- markerUnits=userSpaceOnUse so the head stays one size while the
+               shaft width carries the amount -->
+          <marker id="ah-USD" class="mk mk-USD" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="4" markerHeight="4" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+          <marker id="ah-EUR" class="mk mk-EUR" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="4" markerHeight="4" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+          <marker id="ah-JPY" class="mk mk-JPY" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="4" markerHeight="4" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+        </defs>
         <g id="bis-grat" class="grat"></g>
         <g id="bis-land" class="land"></g>
         <g id="bis-arcs"></g>
@@ -153,7 +176,7 @@
     <div class="readout" id="bis-readout"></div>
 
     <details class="table-view">
-      <summary>Table view — largest borrowers this quarter</summary>
+      <summary>Table view — largest net positions this quarter</summary>
       <div class="table-scroll"><table id="bis-table"></table></div>
     </details>
   </section>
@@ -181,12 +204,26 @@
     </p>
     <h3>The currency arcs are not country pairs at all</h3>
     <p>
-      The BIS publishes cross-border claims by counterparty country and by
+      The BIS publishes cross-border positions by counterparty country and by
       currency of denomination, but only for all reporting banks combined. There
-      is no published matrix of which country lent to which. The arc from
-      Frankfurt to Warsaw means Poland owes that much in euro; it does not mean
-      Germany lent it. Drawing it as though it did would be inventing the most
-      interesting part of the picture.
+      is no published matrix of which country lent to which. An arrow into
+      Warsaw coloured for the euro means Poland owes that much in euro on net;
+      it does not mean Germany lent it. Drawing it as though it did would be
+      inventing the most interesting part of the picture.
+    </p>
+    <h3>Net is a direction, and it hides a balance sheet</h3>
+    <p>
+      Each arrow is claims minus liabilities, so it answers "which way does the
+      obligation run" and nothing else. A country with $2tn of claims against
+      $1.9tn of liabilities and one with $150bn against $50bn both show a
+      $100bn arrow. The gross pair is in the tooltip and the table for that
+      reason.
+    </p>
+    <p>
+      Netting also cuts financial centres down to something readable. London
+      carries $7.2tn of gross claims because it intermediates; on net the
+      position is a small fraction of that. Gross would put the United Kingdom
+      second in the world and mean almost nothing by it.
     </p>
     <h3>Coverage is not constant</h3>
     <p>

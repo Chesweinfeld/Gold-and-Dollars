@@ -35,10 +35,16 @@ from common import DATA, ensure_dirs, finish, http_get, report
 
 BASE = "https://stats.bis.org/api/v1/data/WS_LBS_D_PUB"
 
-# S=stocks, C=claims, A=all instruments, 5J=all bank nationalities,
-# A=all bank types, 5A=all reporting countries, A=all counterparty sectors,
-# N=unadjusted. Only L_DENOM and L_CP_COUNTRY vary.
-KEY = "Q.S.C.A.{denom}.A.5J.A.5A.A..N"
+# S=stocks, A=all instruments, 5J=all bank nationalities, A=all bank types,
+# 5A=all reporting countries, A=all counterparty sectors, N=unadjusted.
+# L_POSITION, L_DENOM and L_CP_COUNTRY vary.
+KEY = "Q.S.{pos}.A.{denom}.A.5J.A.5A.A..N"
+
+# Both sides of the banking system's balance sheet with each country. Their
+# difference is the only net direction this data can honestly support: claims
+# minus liabilities is what the international banking system is owed by a
+# country, net of what it owes that country.
+POSITIONS = {"C": "claims", "L": "liabilities"}
 
 CURRENCIES = {
     "USD": "US dollar",
@@ -53,8 +59,8 @@ CURRENCIES = {
 # in build_flows_data.py, rather than by a hand-kept exclusion list here.
 
 
-def fetch(denom, start="2000"):
-    url = f"{BASE}/{KEY.format(denom=denom)}/all?startPeriod={start}"
+def fetch(pos, denom, start="2000"):
+    url = f"{BASE}/{KEY.format(pos=pos, denom=denom)}/all?startPeriod={start}"
     root = ET.fromstring(http_get(url, timeout=180))
     rows = []
     for series in root.iter():
@@ -72,6 +78,7 @@ def fetch(denom, start="2000"):
             rows.append({
                 "cp_iso2": cp,
                 "period": obs.attrib.get("TIME_PERIOD"),
+                "position": POSITIONS[pos],
                 "currency": denom,
                 "usd_mn": float(v),
             })
@@ -81,16 +88,18 @@ def fetch(denom, start="2000"):
 def main():
     ensure_dirs()
     all_rows = []
-    for denom in CURRENCIES:
-        print(f"GET BIS claims denominated in {denom}")
-        rows = fetch(denom)
-        print(f"  {len(rows)} observations")
-        all_rows.extend(rows)
+    for pos, label in POSITIONS.items():
+        for denom in CURRENCIES:
+            print(f"GET BIS {label} denominated in {denom}")
+            rows = fetch(pos, denom)
+            print(f"  {len(rows)} observations")
+            all_rows.extend(rows)
 
     path = os.path.join(DATA, "bis_claims_by_currency.csv")
-    all_rows.sort(key=lambda r: (r["currency"], r["cp_iso2"], r["period"]))
+    all_rows.sort(key=lambda r: (r["position"], r["currency"], r["cp_iso2"], r["period"]))
     with open(path, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=["cp_iso2", "period", "currency", "usd_mn"])
+        w = csv.DictWriter(fh, fieldnames=[
+            "cp_iso2", "period", "position", "currency", "usd_mn"])
         w.writeheader()
         for r in all_rows:
             w.writerow(r)
@@ -107,6 +116,10 @@ def validate(rows):
     report("coverage", len(periods) > 90 and len(entities) > 150,
            f"{periods[0]} to {periods[-1]}, {len(periods)} quarters, {len(entities)} counterparties")
 
+    for pos in POSITIONS.values():
+        n = sum(1 for r in rows if r["position"] == pos)
+        report(f"{pos} side present", n > 50000, f"{n} observations")
+
     for cur in CURRENCIES:
         n = sum(1 for r in rows if r["currency"] == cur)
         report(f"{cur} series present", n > 1000, f"{n} observations")
@@ -117,6 +130,8 @@ def validate(rows):
     # so this is an inequality, not an identity.
     idx = {}
     for r in rows:
+        if r["position"] != "claims":
+            continue
         idx.setdefault((r["cp_iso2"], r["period"]), {})[r["currency"]] = r["usd_mn"]
     # Everything is rounded to the nearest million, so on a counterparty with a
     # $7mn total the rounding alone can put the parts 14% over. Test only where
@@ -150,12 +165,18 @@ def validate(rows):
     # the extract also contains regional and income aggregates, so adding every
     # row up counts most of the world several times over.
     latest = periods[-1]
-    tot = {r["currency"]: r["usd_mn"] for r in rows
-           if r["cp_iso2"] == "5J" and r["period"] == latest}
-    print(f"\n  {latest}, cross-border claims outstanding, all counterparties (US$ tn):")
+    side = {}
+    for r in rows:
+        if r["cp_iso2"] == "5J" and r["period"] == latest:
+            side[(r["position"], r["currency"])] = r["usd_mn"]
+    print(f"\n  {latest}, all counterparties (US$ tn) — claims, liabilities, net:")
     for c, name in CURRENCIES.items():
-        v = tot.get(c)
-        print(f"    {name:<16} {v / 1e6:7.2f}" if v else f"    {name:<16}       —")
+        cl = side.get(("claims", c))
+        li = side.get(("liabilities", c))
+        if cl is None or li is None:
+            print(f"    {name:<16}       —")
+            continue
+        print(f"    {name:<16} {cl / 1e6:7.2f}  {li / 1e6:7.2f}  {(cl - li) / 1e6:+7.2f}")
 
 
 if __name__ == "__main__":

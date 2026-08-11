@@ -72,14 +72,14 @@ the reserves are denominated in.
 | `data/reserves/cofer_currency_shares.csv` | IMF COFER — world reserve shares by currency, 1995–2026Q1, including the pre-euro DEM, FRF, NLG and ECU |
 | `data/reserves/reserves_by_country.csv` | World Bank — reserves per country per year, 1960–2025, gold separable |
 | `data/reserves/tic_treasury_holders.csv` | US Treasury TIC — **foreign holdings of US Treasuries by country, monthly 2000–2025**, 50 named countries |
-| `data/reserves/bis_claims_by_currency.csv` | BIS — cross-border bank claims on each country by currency of denomination, quarterly |
+| `data/reserves/bis_claims_by_currency.csv` | BIS — cross-border bank claims **and** liabilities with each country by currency, quarterly; their difference is the net direction |
 | `site/` | the pages themselves; no frameworks, no CDN, no third-party code at runtime |
 
 Two pages: `index.html` for where reserves sit and what they are made of, and
 `flows.html` for the lines between countries — who holds US Treasuries, and
 whose currency the world owes its debts in.
 
-`src/reserves/` rebuilds all of it from four public APIs, 33 validation checks.
+`src/reserves/` rebuilds all of it from four public APIs, 36 validation checks.
 See `docs/reserve-currency-map.md`.
 
 ## Findings

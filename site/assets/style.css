@@ -367,6 +367,28 @@ input[type="range"] {
   stroke-width: .5;
 }
 .node.target { fill: var(--s2); stroke: var(--surface-1); stroke-width: 1.1; }
+/* Net debtor vs net creditor is a polarity, so it takes the diverging pair —
+   blue and red round a neutral zero — never two categorical hues. */
+.node.is-debtor   { fill: rgba(208, 59, 59, .40); stroke: #d03b3b; }
+.node.is-creditor { fill: rgba(42, 120, 214, .40); stroke: #2a78d6; }
+
+.mk-USD path { fill: var(--s1); }
+.mk-EUR path { fill: var(--s2); }
+.mk-JPY path { fill: var(--s3); }
+
+.asset-tag {
+  display: inline-block;
+  margin-bottom: .55rem;
+  padding: .16rem .5rem;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+}
+.asset-tag.is-asset { color: var(--s1); }
+.asset-tag.is-liability { color: var(--s2); }
 
 .issuer-mark { fill: var(--surface-1); stroke-width: 1.1; }
 .cur-stroke-USD { stroke: var(--s1); }

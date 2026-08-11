@@ -40,11 +40,15 @@ function svg(tag, attrs, parent) {
   return n;
 }
 
+/* Net positions are signed, so the sign goes outside the currency symbol —
+   "−$200bn", not "$-200bn" — with a real minus rather than a hyphen. */
 function money(bn) {
   if (bn == null) return '—';
-  if (Math.abs(bn) >= 1000) return '$' + (bn / 1000).toFixed(2) + 'tn';
-  if (Math.abs(bn) >= 1) return '$' + Math.round(bn).toLocaleString() + 'bn';
-  return '$' + (bn * 1000).toFixed(0) + 'm';
+  const sign = bn < 0 ? '−' : '';
+  const a = Math.abs(bn);
+  if (a >= 1000) return sign + '$' + (a / 1000).toFixed(2) + 'tn';
+  if (a >= 1) return sign + '$' + Math.round(a).toLocaleString() + 'bn';
+  return sign + '$' + (a * 1000).toFixed(0) + 'm';
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -217,14 +221,16 @@ function drawBis() {
   const i = bis.i;
   const list = bis.cur === 'ALL' ? CUR_ORDER : [bis.cur];
 
+  // Ranked by the size of the net position, not its sign — the biggest
+  // creditors matter as much as the biggest debtors.
   const rows = F.bis.countries
     .map((c) => ({ c, v: list.reduce((a, k) => a + c[k][i], 0) }))
-    .filter((r) => r.v > 0)
-    .sort((a, b) => b.v - a.v);
-  // Three arcs per country, so the count multiplies fast; 30 borrowers is
-  // where the web still reads as a web rather than as hatching.
+    .filter((r) => Math.abs(r.v) > 0)
+    .sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
+  // Up to three arcs per country, so the count multiplies fast; 30 is where
+  // the web still reads as a web rather than as hatching.
   const shown = rows.slice(0, 30);
-  const max = shown.length ? shown[0].v : 1;
+  const max = shown.length ? Math.abs(shown[0].v) : 1;
 
   const arcs = el('bis-arcs');
   const nodes = el('bis-nodes');
@@ -239,18 +245,27 @@ function drawBis() {
       const home = F.bis.currencies[k];
       // Skip the degenerate arc from a currency's home to itself.
       if (Math.hypot(home.c[0] - c.c[0], home.c[1] - c.c[1]) < 1.5) continue;
-      const w = Math.max(0.25, Math.sqrt(v / max) * 2.8);
+      // The arrow points at whoever owes. Positive net means the banking
+      // system's claims on the country exceed its liabilities to it, so the
+      // obligation runs towards the country; negative reverses the arrow.
+      const owes = v > 0;
+      const w = Math.max(0.25, Math.sqrt(Math.abs(v) / max) * 2.8);
       svg('path', {
-        d: arcPath(home.c, c.c, 1),
-        class: 'arc cur-' + k, 'stroke-width': w.toFixed(2),
+        d: owes ? arcPath(home.c, c.c, 1) : arcPath(c.c, home.c, -1),
+        class: 'arc cur-' + k,
+        'stroke-width': w.toFixed(2),
+        'marker-end': `url(#ah-${k})`,
       }, arcs);
     }
   }
 
   for (const { c, v } of shown) {
     const [x, y] = project(c.c[0], c.c[1]);
-    const r = Math.max(0.8, Math.sqrt(v / max) * 4.6);
-    svg('circle', { cx: x, cy: y, r, class: 'node' }, nodes);
+    const r = Math.max(0.8, Math.sqrt(Math.abs(v) / max) * 4.6);
+    svg('circle', {
+      cx: x, cy: y, r,
+      class: 'node ' + (v > 0 ? 'is-debtor' : 'is-creditor'),
+    }, nodes);
     bis.nodes.push({ x, y, r: Math.max(r, 2.4), c, v });
   }
   for (const k of list) {
@@ -269,32 +284,32 @@ function drawBis() {
   el('bis-out').textContent = F.bis.periods[i];
   el('bis-period').value = i;
 
-  const tot = {};
-  for (const k of CUR_ORDER) {
-    tot[k] = F.bis.countries.reduce((a, c) => a + c[k][i], 0);
-  }
-  const all = F.bis.countries.reduce((a, c) => a + c.TO1[i], 0);
+  const gross = F.bis.countries.reduce((a, c) => a + c.cl[i], 0);
+  const debtors = F.bis.countries.filter((c) => c.TO1[i] > 0);
+  const owed = debtors.reduce((a, c) => a + c.TO1[i], 0);
+  const usdNet = F.bis.countries.reduce((a, c) => a + Math.max(c.USD[i], 0), 0);
   const top = rows[0];
 
   el('bis-readout').innerHTML = `
-    <dl class="stat"><dt>Cross-border claims, ${F.bis.periods[i]}</dt>
-      <dd>${money(all)}<span class="sub">all currencies, ${F.bis.countries.length} counterparties</span></dd></dl>
-    <dl class="stat"><dt>Written in dollars</dt>
-      <dd>${(tot.USD / all * 100).toFixed(0)}%<span class="sub">${money(tot.USD)} · euro ${(tot.EUR / all * 100).toFixed(0)}%, yen ${(tot.JPY / all * 100).toFixed(0)}%</span></dd></dl>
-    <dl class="stat"><dt>Largest borrower${bis.cur === 'ALL' ? '' : ' in ' + bis.cur}</dt>
-      <dd>${top ? top.c.name : '—'}<span class="sub">${top ? money(top.v) : ''}</span></dd></dl>`;
+    <dl class="stat"><dt>Gross claims outstanding, ${F.bis.periods[i]}</dt>
+      <dd>${money(gross)}<span class="sub">the balance sheet the net comes out of</span></dd></dl>
+    <dl class="stat"><dt>Owed on net</dt>
+      <dd>${money(owed)}<span class="sub">${debtors.length} net debtor countries, ${F.bis.countries.length - debtors.length} net creditors · ${money(usdNet)} of it in dollars</span></dd></dl>
+    <dl class="stat"><dt>Largest net position${bis.cur === 'ALL' ? '' : ' in ' + bis.cur}</dt>
+      <dd>${top ? top.c.name : '—'}<span class="sub">${top ? (top.v > 0 ? 'owes ' : 'is owed ') + money(Math.abs(top.v)) : ''}</span></dd></dl>`;
 
   el('bis-table').innerHTML =
-    `<thead><tr><th class="n">#</th><th>Counterparty</th><th class="n">USD</th>` +
-    `<th class="n">EUR</th><th class="n">JPY</th><th class="n">All</th>` +
-    `<th class="n">USD share</th></tr></thead><tbody>` +
+    `<thead><tr><th class="n">#</th><th>Counterparty</th><th>Direction</th>` +
+    `<th class="n">Net USD</th><th class="n">Net EUR</th><th class="n">Net JPY</th>` +
+    `<th class="n">Net all</th><th class="n">Gross claims</th></tr></thead><tbody>` +
     rows.slice(0, 20).map((r, n) =>
       `<tr><td class="n">${n + 1}</td><td>${r.c.name}</td>` +
+      `<td>${r.c.TO1[i] > 0 ? 'owes' : 'is owed'}</td>` +
       `<td class="n">${money(r.c.USD[i])}</td>` +
       `<td class="n">${money(r.c.EUR[i])}</td>` +
       `<td class="n">${money(r.c.JPY[i])}</td>` +
       `<td class="n">${money(r.c.TO1[i])}</td>` +
-      `<td class="n">${r.c.TO1[i] ? (r.c.USD[i] / r.c.TO1[i] * 100).toFixed(0) + '%' : '—'}</td></tr>`).join('') +
+      `<td class="n">${money(r.c.cl[i])}</td></tr>`).join('') +
     `</tbody>`;
 }
 
@@ -303,7 +318,8 @@ function bisLegend() {
     CUR_ORDER.map((k) =>
       `<span class="key"><span class="chip c-${k}"></span>${F.bis.currencies[k].name}` +
       ` <span style="color:var(--ink-muted)">${F.bis.currencies[k].seat}</span></span>`).join('') +
-    `<span class="legend-cap">Arc width ∝ amount owed in that currency</span>`;
+    `<span class="legend-cap">Arrow points at whoever owes on net; ` +
+    `width ∝ the size of the net position</span>`;
 }
 
 /* ── play loops ───────────────────────────────────────────────────── */
@@ -421,12 +437,14 @@ async function main() {
     if (!hit) { bisTip.hidden = true; return; }
     const c = hit.c;
     const i = bis.i;
+    const owes = c.TO1[i] > 0;
     showTip(bisTip, bisMap, hit.x, hit.y,
-      `<b>${c.name}</b>` +
-      `<div class="row"><span>Owed in dollars</span><span>${money(c.USD[i])}</span></div>` +
-      `<div class="row"><span>Owed in euro</span><span>${money(c.EUR[i])}</span></div>` +
-      `<div class="row"><span>Owed in yen</span><span>${money(c.JPY[i])}</span></div>` +
-      `<div class="row"><span>All currencies</span><span>${money(c.TO1[i])}</span></div>`);
+      `<b>${c.name} ${owes ? 'owes on net' : 'is owed on net'}</b>` +
+      `<div class="row"><span>Net, all currencies</span><span>${money(Math.abs(c.TO1[i]))}</span></div>` +
+      `<div class="row"><span>Net in dollars</span><span>${money(c.USD[i])}</span></div>` +
+      `<div class="row"><span>Net in euro</span><span>${money(c.EUR[i])}</span></div>` +
+      `<div class="row"><span>Net in yen</span><span>${money(c.JPY[i])}</span></div>` +
+      `<div class="row"><span>Gross claims / owed to it</span><span>${money(c.cl[i])} / ${money(c.li[i])}</span></div>`);
   });
   bisMap.addEventListener('pointerleave', () => { bisTip.hidden = true; });
 
