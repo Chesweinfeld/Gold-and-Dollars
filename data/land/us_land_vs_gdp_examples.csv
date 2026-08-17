@@ -1,0 +1,12 @@
+place,note,tile_row,tile_col,land_usd,gdp_usd,years,vs_national
+"Gary, Indiana (mill district)",FLAGGED: Indiana's urban land is under-priced by the model,279,800,9925095,865969471,0.0115,0.028
+Midtown Manhattan,"the dearest ground in America, and still teal",257,1089,17650117384,426014714182,0.0414,0.103
+"Cleveland, Ohio (the Flats)",cheap industrial ground carrying real output,269,921,209950365,2410893903,0.0871,0.216
+Beverly Hills,"expensive, but worked",445,84,1978209213,19204890173,0.103,0.255
+Iowa farmland (Story County),row crop,275,665,117792910,1110954625,0.106,0.263
+"Bakersfield, California",oil and agriculture,405,79,433124750,2925667025,0.148,0.367
+Houston Ship Channel,refining and port,633,635,89227786,229560195,0.3887,0.963
+"Aspen, Colorado",resort,345,373,656441995,1316906699,0.4985,1.235
+"Mountain View, California","productive, and priced ahead of it",330,25,5876809379,7465706095,0.7872,1.95
+Napa Valley,priced on future vintages,298,28,51007961,41769674,1.2212,3.024
+Cape Cod,priced on wanting to be there,207,1164,236131355,58096624,4.0645,10.066

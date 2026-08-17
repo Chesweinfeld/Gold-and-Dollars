@@ -5,3 +5,23 @@ __pycache__/
 *.pdf
 *.zip
 .DS_Store
+
+# large downloads, rebuilt by src/land/fetch_inputs.py
+*.tif
+*.tif.ovr
+
+# transported cartogram meshes, rebuildable from the sources
+data/land/cache/
+
+# Raw downloads: 88 GB of them, every one rebuilt by src/land/fetch_inputs.py.
+# The .zip rule above already caught some; this catches the rest -- the LODES
+# .csv.gz, the ACS .dat, the BEA and QCEW and NASS and FracFocus bulk files.
+data/land/inputs/
+
+# Build intermediates that are too big to keep in git and cost minutes, not
+# hours, to remake.  us_gdp_points.npz is 110 MB, over GitHub's own file limit.
+data/land/us_gdp_points.npz
+data/land/us_private_share.npy
+
+# Machine-local Claude Code settings.
+.claude/settings.local.json

@@ -60,7 +60,157 @@ therefore not published here — `src/gold_routes.py` regenerates them for anyon
 with the book. See `docs/gold-routes.md` and `docs/silver-routes.md` — silver
 completes the chain gold could not, because its treasury transfers exist.
 
+### Global land value — `data/land/`
+
+A modern side-piece: what the world's land is worth today, and a cartogram
+drawing every country at its share of it. Agricultural land is measured;
+urban land is modelled from GDP on the fourteen countries whose national
+accounts actually report total land.
+
+| file | contents |
+|---|---|
+| `land_value_2020.csv` | 210 countries: agricultural, urban, total, and a sensitivity variant |
+| `urban_land_calibration.csv` | the 18 SNA reporters, observed against fitted, and which were used |
+| `cartogram_area_check.csv` | each country's share of value against its share of the drawing |
+| `subnational_land_value.csv` | the same value split across 4,405 states and provinces |
+| `cartogram_area_check_subnational.csv` | the area check at unit level |
+
+See [`docs/land-value-cartogram.md`](docs/land-value-cartogram.md). Two figures
+in `docs/figures/`: countries, and a zoomable version at state and province
+level. Note the boundary between measurement and model: 17.8% of the total is
+measured, and the doc is mostly about what the other 82.2% can and cannot
+support.
+
+### American land value at 480 m — `src/land/make_us_cartogram.py`
+
+The United States is the one large country where the urban half does not have
+to be modelled: Nolte (2020) fitted six million arm's-length land sales and
+published a fair-market value for every 480 m cell of the conterminous states.
+Three zoomable WebGL cartograms in `docs/figures/` — the country on a 3.84 km
+grid (533,958 tiles), and New York and the Bay Area at the source's native
+480 m — plus a study of how much of the rest of the world could be done the
+same way.
+
+See [`docs/us-land-value-cartogram.md`](docs/us-land-value-cartogram.md).
+
+### American GDP on the same lattice — `src/land/build_us_gdp.py`
+
+BEA measures GDP by county and nothing finer. Placing it inside each county
+puts $27.5tn of 2023 output on the same 3.84 km tiles as the land map, so the
+two can be divided by each other. Each part of it goes on the thing that
+produces it: **85.7% on the jobs**, from 2.3 million census blocks of workplace
+counts in the Census LEHD; **13.4% on the housing**, because BEA's largest
+single line below the total is the output of dwellings — rent paid, plus the
+rent imputed to owner-occupiers — which is produced by the house rather than at
+its occupant's office; and **0.8% on the land cover**, from the USDA crop
+map, because payroll records cannot see a farmer working his own land. Before
+that split, 62% of the tiles carrying land value had no output at all; after
+it, 0.8%.
+
+Crucially it is not all jobs at one rate. BEA reports county GDP on twenty
+industry lines and LODES counts jobs in the same twenty NAICS sectors in every
+block, so **each line rides the jobs of its own industry** — from $66,576 a job
+in accommodation and food to $432,406 in information. A refinery block and a school
+block in the same county used to receive identical output. One place the
+mapping had to be undone: BEA's education and health lines are *private* only,
+while a public school's teachers sit in the same LODES sector as a private
+one's, so matched one to one government came out at $446,032 a job and
+education at $6,019 in the median county. Those three lines are pooled and
+carried together.
+
+Three registers put the work where LODES cannot. **MSHA** counts a mine's
+employees at the mine, **EIA-860** puts 1,274 GW of generating capacity at its
+plants, and **FracFocus** puts 61,936 hydraulically fractured wells at their
+coordinates — all added as carrier points, because a mining company or a
+utility reports its payroll at the head office. The wells are the largest
+single correction: Loving County, Texas carries $10.7bn of output and had **not
+one census block with a mining job in it**, so its oil was stranded and drawn
+on the county's gas stations. It now sits on 2,332 points. 57% of the mining
+line's weight is at a site rather than an office, and the sector's rate fell
+from $685,529 a job to $303,952 as the real workplaces entered the
+denominator. And the eleven classes of ground the
+crop map distinguishes — from vegetables at $33,362 a hectare to sagebrush at
+$35 — get their rates **fitted against the 2022 Census of Agriculture** rather
+than asserted. That fit is honest about what it cannot do: regressed on
+livestock sales, grazing land scores R² −0.278, worse than predicting the mean,
+because the animals that earn most are raised in barns the crop map sees as
+buildings. So crops are fitted on census sales and grazing on BEA's own farm
+line, and any class the fit cannot separate is folded into a sibling and said
+to be. Every county still reconciles to its BEA figure exactly — 100.0000%,
+checked on every build — and how well LODES counts the country at all is
+measured against BLS QCEW by `src/land/check_lodes_coverage.py`: 1.03 overall,
+within 20% on 85% of county-sectors.
+
+Two further figures divide the two. The quantity is a **price-to-earnings ratio
+for the ground**: a tile's land value over the output produced on it, a stock
+over a flow, so it has units of years. Over the ground that has output on it the
+baseline is 0.4038 — privately held American land is worth about five months of
+what is made on it. Low is working ground (the
+Cleveland Flats at 0.09 years, Midtown Manhattan at 0.04 despite being the
+dearest dirt in the country); high is ground priced for something other than the
+work on it (Cape Cod at 4.06, Napa at 1.22). The worked examples are printed
+from the shipped tiles by `src/land/ratio_examples.py`. Two things have to be
+distrusted. Indiana's cities carry almost no urban premium in the land model, so
+the state reads far more teal than it should — measured, and separated from a
+real state-level effect, by `src/land/land_model_gaps.py`. And the map is not
+equally fine everywhere: on ground that has workplaces, three quarters of the
+ratio's variance is within counties and the pattern is real geography. On the
+ground that has none, 73% of it is between counties — the county figure showing
+through — so **that ground is not given a ratio at all**: it is drawn in one
+flat grey, 20.2% of the land value on the page. The county farm multiplier
+spans 21× between counties and no allocator fixed it, so the map stops where
+its denominator stops. Ground with no market at all — the national parks and
+the military bases, 1.4% of the lower 48 — is left out of the numerator
+entirely, because the land model prices it anyway: $1.04m per km² for the
+interior of Yellowstone. That exclusion applies only to this ratio map; the
+land-value cartograms draw every acre, Yellowstone included, and say so in
+their own note. Both variance readings are printed on every build by
+`src/land/us_land_vs_gdp.py`.
+
+There is also a **scrolled version** of the flat map — twelve stops, each
+framing the ground it is about. Every number in its text is computed from the
+tiles at build time and the rectangle it was summed over is drawn on the map,
+so a caption cannot drift away from what it describes. Its sharpest stop is the
+East River: the two most valuable squares in America sit next to each other,
+hold the same $17.7bn of land, and come out 8x apart because one of them has
+Midtown on it.
+
+See [`docs/us-gdp-cartogram.md`](docs/us-gdp-cartogram.md).
+
 ## Findings
+
+**American output is nearly five times as concentrated as American land
+value.** On the same 3.84 km tiles, half of GDP is produced on 45,240 km² —
+0.6% of the conterminous states — against 212,145 km² for half of land value. A
+tenth of GDP comes off 988 km², an area smaller than New York City. Detail in
+[`docs/us-gdp-cartogram.md`](docs/us-gdp-cartogram.md).
+
+**The ratio of land value to output climbs by a factor of 5.7 from the middle
+of a city to its edge.** Pooling the twelve largest downtowns and banding every
+square by its distance from one: 1/4.9 of the national figure within 5 km, then
+1/1.5, 1/1.3, 1/1.0, and 1.1x at 50–80 km. The direction holds in all twelve
+metros taken one at a time. It is the cleanest structure in the data, and it
+survives the obvious objection: the rent on every dwelling in the ring is
+counted on the ground the dwelling stands on, and the suburb still costs more
+years than it earns, because what a house earns in a year is small beside what
+work earns on the same square foot downtown. The median dollar of American land
+value sits on ground worth 0.619 years of its own output against a national
+0.4046, and 64.8% of it is dearer than the national figure implies. Those are
+measured over the coloured ground — the ground with a workplace on it — and are
+printed on every build rather than typed here.
+
+**Half of American land value sits on 3% of American ground.** Sorting all
+33.7 million 480 m cells of the conterminous US by fair market value, the top
+230,000 km² — 2.9% of the surface — holds 53.3% of the total; the top 23,000
+km², 0.29%, holds 23.0%. Detail in
+[`docs/us-land-value-cartogram.md`](docs/us-land-value-cartogram.md).
+
+**The World Bank values all US agricultural land at $182 billion.** *Changing
+Wealth of Nations* gives US cropland $83bn and pastureland $100bn for 2020.
+USDA's own total for US farmland and buildings was $2,732bn in 2019 — a factor
+of fifteen. CWON capitalises resource rents rather than observing prices, so
+the two are not measuring the same thing, but the gap is large enough that the
+farmland half of any CWON-based world map should not be read as a market value.
 
 **Hamilton's post-1630 collapse is mostly a measurement artifact.** His
 registered arrivals run at 128% of the modern composite in the 1590s and 17% by
@@ -120,6 +270,15 @@ to 0.233. On the years derived from receipts the cross-district IQR is 3.8x
 tighter and **13 of 21 districts sit within one point of 0.1135** — Zacatecas
 0.1109, Guadalajara 0.1123, Zimapan 0.1123, Carangas 0.1130, Huancavelica
 0.1135. Different centuries, different viceroyalties, same number.
+
+**The World Bank's urban land value is a constant.** *Changing Wealth of
+Nations* reports produced capital both including and excluding urban land, which
+looks like an urban land series for 150 countries. The ratio of the two is
+1.2400000000 for every country in every year, across 3,858 country-years, with a
+standard deviation of 2.4e-15. Urban land there is 0.24 × produced capital by
+assumption and carries no country information of its own — the same failure as
+the derived output figures below, in a series published in 2024. See
+`docs/land-value-cartogram.md`.
 
 **Beware circular joins.** Where the production literature had no independent
 output figure, one was derived from tax receipts at an assumed rate. Joining
