@@ -1,0 +1,85 @@
+test,name,state,median_usd_m_per_km2,p999_usd_m_per_km2,peak_over_median
+state_peakedness,AL,AL,0.6583,23.116,35.11
+state_peakedness,AR,AR,0.4318,23.52,54.47
+state_peakedness,AZ,AZ,0.4745,85.971,181.19
+state_peakedness,CA,CA,0.4359,197.912,454.03
+state_peakedness,CO,CO,0.3673,66.659,181.47
+state_peakedness,CT,CT,4.4042,206.014,46.78
+state_peakedness,DE,DE,2.331,26.674,11.44
+state_peakedness,FL,FL,1.1227,179.097,159.53
+state_peakedness,GA,GA,0.6316,49.439,78.28
+state_peakedness,IA,IA,1.1964,20.301,16.97
+state_peakedness,ID,ID,0.5056,8.865,17.54
+state_peakedness,IL,IL,1.1139,125.168,112.37
+state_peakedness,IN,IN,0.9065,10.709,11.81
+state_peakedness,KS,KS,0.3013,8.729,28.97
+state_peakedness,KY,KY,0.5119,42.431,82.89
+state_peakedness,LA,LA,0.4598,51.793,112.64
+state_peakedness,MA,MA,5.4454,522.092,95.88
+state_peakedness,MD,MD,3.023,154.63,51.15
+state_peakedness,ME,ME,0.1758,11.153,63.43
+state_peakedness,MI,MI,0.5841,18.7,32.01
+state_peakedness,MN,MN,0.5567,94.168,169.15
+state_peakedness,MO,MO,0.6621,58.201,87.9
+state_peakedness,MS,MS,0.4719,9.432,19.99
+state_peakedness,MT,MT,0.2324,8.942,38.47
+state_peakedness,NC,NC,1.0313,37.998,36.84
+state_peakedness,ND,ND,0.2324,3.718,16.0
+state_peakedness,NE,NE,0.2532,26.098,103.09
+state_peakedness,NH,NH,0.9628,33.539,34.84
+state_peakedness,NJ,NJ,4.5519,167.928,36.89
+state_peakedness,NM,NM,0.3482,23.046,66.19
+state_peakedness,NV,NV,0.1642,53.16,323.69
+state_peakedness,NY,NY,0.5437,577.655,1062.54
+state_peakedness,OH,OH,0.9494,30.931,32.58
+state_peakedness,OK,OK,0.3075,22.958,74.67
+state_peakedness,OR,OR,0.3081,55.734,180.93
+state_peakedness,PA,PA,0.7905,41.056,51.94
+state_peakedness,SC,SC,0.5844,36.13,61.82
+state_peakedness,SD,SD,0.234,6.136,26.23
+state_peakedness,TN,TN,0.6833,32.758,47.94
+state_peakedness,TX,TX,0.5425,29.35,54.11
+state_peakedness,UT,UT,0.4383,35.497,80.99
+state_peakedness,VA,VA,0.9555,111.115,116.29
+state_peakedness,VT,VT,0.5129,6.237,12.16
+state_peakedness,WA,WA,0.4609,83.339,180.82
+state_peakedness,WI,WI,0.6928,30.907,44.61
+state_peakedness,WV,WV,0.3826,10.161,26.56
+state_peakedness,WY,WY,0.358,3.59,10.03
+border_transect,"-85.60,41.00",IN,0.7997,,
+border_transect,"-85.50,41.00",IN,0.8915,,
+border_transect,"-85.40,41.00",IN,0.8302,,
+border_transect,"-85.30,41.00",IN,0.8567,,
+border_transect,"-85.20,41.00",IN,1.0406,,
+border_transect,"-85.10,41.00",IN,0.8489,,
+border_transect,"-85.00,41.00",IN,0.8018,,
+border_transect,"-84.90,41.00",IN,0.7461,,
+border_transect,"-84.80,41.00",IN,0.621,,
+border_transect,"-84.70,41.00",OH,0.8505,,
+border_transect,"-84.60,41.00",OH,0.74,,
+border_transect,"-84.50,41.00",OH,0.8075,,
+border_transect,"-84.40,41.00",OH,0.6618,,
+border_transect,"-84.30,41.00",OH,0.75,,
+border_transect,"-84.20,41.00",OH,0.8691,,
+border_transect,"-84.10,41.00",OH,0.8443,,
+"heavy_industry,_matched_by_land_use","Gary, Indiana (US Steel)",IN,0.8453,,
+"heavy_industry,_matched_by_land_use","Burns Harbor, Indiana",IN,1.5152,,
+"heavy_industry,_matched_by_land_use","East Chicago, Indiana",IN,2.4389,,
+"heavy_industry,_matched_by_land_use","Cleveland, Ohio (the Flats)",OH,10.7254,,
+"heavy_industry,_matched_by_land_use","Middletown, Ohio (AK Steel)",OH,7.6479,,
+"heavy_industry,_matched_by_land_use","Granite City, Illinois",IL,3.6164,,
+"heavy_industry,_matched_by_land_use","South Works, Chicago",IL,5.6009,,
+"heavy_industry,_matched_by_land_use","Dearborn, Michigan (the Rouge)",MI,6.9585,,
+"heavy_industry,_matched_by_land_use","Weirton, West Virginia",WV,1.8395,,
+"heavy_industry,_matched_by_land_use","Sparrows Point, Maryland",MD,10.2077,,
+midwest_metro_centres,"Fort Wayne, Indiana",IN,0.6672,,
+midwest_metro_centres,"South Bend, Indiana",IN,1.821,,
+midwest_metro_centres,"Toledo, Ohio",OH,5.5173,,
+midwest_metro_centres,"Dayton, Ohio",OH,5.9007,,
+midwest_metro_centres,"Akron, Ohio",OH,10.089,,
+midwest_metro_centres,"Grand Rapids, Michigan",MI,21.399,,
+midwest_metro_centres,"Lansing, Michigan",MI,8.0232,,
+midwest_metro_centres,"Rockford, Illinois",IL,10.1397,,
+midwest_metro_centres,"Peoria, Illinois",IL,32.1353,,
+midwest_metro_centres,"Madison, Wisconsin",WI,35.938,,
+midwest_metro_centres,"Des Moines, Iowa",IA,12.5127,,

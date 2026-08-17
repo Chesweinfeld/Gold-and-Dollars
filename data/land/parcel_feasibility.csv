@@ -1,0 +1,30 @@
+iso3,country,tier,land_usd,share,what,url,http
+JPN,Japan,parcel,10154098531342.342,0.05062822251844602,"Rosenka (路線価) assign a land value to every street frontage, plus the L01/L02 valuation points",https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-L01-v3_0.html,200
+KOR,"Korea, Rep.",parcel,3463764876091.8066,0.017270293207916208,"Individual official land price (개별공시지가) for every parcel, annual, SHP and CSV",https://www.data.go.kr/data/15029071/standard.do,200
+CAN,Canada,parcel,3209254512447.726,0.01600130736106332,"Provincial assessment rolls carry land value; BC publishes, Ontario does not",https://bcassessment.ca/,200
+RUS,Russian Federation,parcel,3071120872130.8115,0.015312574564384104,"Cadastral value per parcel on the public cadastral map; queryable, no bulk export",https://pkk.rosreestr.ru/,0
+AUS,Australia,parcel,3046277738642.913,0.015188706976690478,"Unimproved land value per parcel from state Valuers-General; NSW publishes bulk, other states vary",https://www.valuergeneral.nsw.gov.au/land_value_summaries/lvsearch.php,403
+ESP,Spain,parcel,2649277545500.72,0.013209268422275357,"Valor de referencia per parcel since 2022, with a land component; query-only",https://www.sedecatastro.gob.es/,200
+DNK,Denmark,parcel,704072487133.0835,0.0035104976022895837,"Grundværdi (land value) per property, public valuation register",https://datafordeler.dk/dataoversigt/ejendomsvurdering-vur/,200
+NZL,New Zealand,parcel,608547957329.8706,0.003034213357467739,Land value per rating unit in council valuation rolls; national layer via LINZ,https://data.linz.govt.nz/layer/105689/,200
+LTU,Lithuania,parcel,136955665421.26724,0.0006828594269306476,"Mass valuation land values per parcel, Registrų centras",https://www.registrucentras.lt/masvert/,403
+IND,India,zone,12077172878802.195,0.06021664985960182,"Circle rates / guidance values per locality, published state by state in incompatible formats",https://igrs.rajasthan.gov.in/,0
+DEU,Germany,zone,7702916494003.174,0.038406656100061096,"Bodenrichtwerte: an official land value per price zone, nationwide through BORIS-D, open in most states",https://www.bodenrichtwerte-boris.de/,200
+ITA,Italy,zone,3823154698007.727,0.01906220686905128,OMI zones give a value band per micro-zone per use class,https://www.agenziaentrate.gov.it/portale/schede/fabbricatiterreni/omi,200
+IDN,Indonesia,zone,3403514928351.467,0.016969887637544083,NJOP land value classes per zone for property tax,https://www.pajak.go.id/,200
+BRA,Brazil,zone,3244467135561.2534,0.01617687710887964,Planta genérica de valores per municipality; a few large cities publish the per-square-metre land table,http://dados.prefeitura.sp.gov.br/dataset/iptu,200
+ZAF,South Africa,zone,839826249359.2689,0.0041873643532364,Municipal valuation rolls are public by statute; format and land/improvement split vary by municipality,https://www.cogta.gov.za/,200
+CZE,Czechia,zone,521844804128.6131,0.002601912398423974,"Municipal cenové mapy where they exist, plus the national valuation decree tables",https://www.cuzk.cz/,200
+EST,Estonia,zone,67744901495.23315,0.0003377753265643622,"Land value zones from the 2022 revaluation, Maa-amet",https://geoportaal.maaamet.ee/est/ruumiandmed/maa-hindamine-p309.html,200
+USA,United States,sales,41312799193229.71,0.20598515800872463,No national valuation roll; the map in this directory exists because six million sales were assembled privately and modelled,https://doi.org/10.1073/pnas.2012865117,403
+CHN,China,sales,41211254939859.87,0.20547885948904715,State land grants are published transaction by transaction with area and price on the national land market site,https://www.landchina.com/,200
+GBR,United Kingdom,sales,5300121905248.552,0.026426348962987713,"Price Paid Data: every registered sale, address-level, open licence",https://use-land-property-data.service.gov.uk/datasets/price-paid,302
+FRA,France,sales,5260568396430.892,0.02622913560725508,"DVF: every transaction since 2014, with parcel id and coordinates, fully open",https://files.data.gouv.fr/geo-dvf/latest/csv/,200
+MEX,Mexico,sales,2516450691832.0625,0.012546995204893756,"Valores catastrales per state; a handful of states publish, most do not",https://www.inegi.org.mx/,200
+NLD,Netherlands,sales,1834086069335.712,0.009144732774622296,"WOZ values are per address but price the property, not the land; Kadaster sells the transaction file",https://www.wozwaardeloket.nl/,200
+CHE,Switzerland,sales,1467784218699.8633,0.007318355815046083,Cantonal transaction registers; no federal series,https://www.bfs.admin.ch/,200
+POL,Poland,sales,1344176277196.853,0.006702047991348594,"Rejestr cen nieruchomości, per-county, patchy",https://www.gov.pl/web/gugik,200
+SWE,Sweden,sales,1074870632078.1776,0.005359293035361427,"Taxeringsvärde splits out markvärde per property, but Lantmäteriet charges for the file",https://www.lantmateriet.se/,200
+AUT,Austria,sales,850838980684.3563,0.004242273709329548,"Kaufpreissammlung, obtainable per district for a fee",https://www.bev.gv.at/,200
+NOR,Norway,sales,750532366737.7822,0.0037421460460728005,"Registered sale prices per property in the cadastre, licensed rather than open",https://www.kartverket.no/,200
+FIN,Finland,sales,538602978593.24554,0.0026854684702091263,"Kauppahintarekisteri, the price register of real estate transactions",https://www.maanmittauslaitos.fi/,200
