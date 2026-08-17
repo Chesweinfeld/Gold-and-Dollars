@@ -72,10 +72,19 @@ work actually happens, and are added as further carrier points by
   installed megawatts (0.64 jobs per MW, printed on every build because it is
   the one number here that is a choice rather than a measurement).
 - **FracFocus** — 61,936 wells fracked 2019–2023, carrying 926bn gallons of
-  base water, converted the same way (0.61 mining jobs per million gallons).
-  The window matters: a shale well loses most of its rate in two years, so
-  counting the registry back to 2011 would put weight on ground that has
-  largely stopped paying.
+  base water. The window matters: a shale well loses most of its rate in two
+  years, so counting the registry back to 2011 would put weight on ground that
+  has largely stopped paying.
+- **CalGEM** — 42,817 producing California wells (oil and gas, dry gas, cyclic
+  steam). California lifts its heavy oil by steam rather than by fracturing, so
+  FracFocus is blind to it: Kern County had **296** fracked wells against
+  $5.71bn of output, and now has 33,197 wells in total.
+
+The two well registers are put on one scale before either meets a job: a
+fracked well counts in units of the median frac, a CalGEM well counts as one,
+and the lot is weighed at 5.41 mining jobs per well-unit. That understates a
+shale well against a stripper — but the two are almost never in the same
+county, and this only decides what happens inside one.
 
 They are *added* to the LODES blocks rather than replacing them. A mine's
 employees may also appear in the LODES count for the block the mine sits in, so
@@ -221,13 +230,26 @@ to population; the other eighteen lines are suppressed far more often — 1,122
 counties for management of companies alone — and each is refilled over its own
 sector's jobs.
 
-And **the oil that is not fracked still lands at the office.** FracFocus is a
-disclosure registry for hydraulic fracturing, so it holds the Permian, the
-Bakken, the Eagle Ford, the Marcellus and the Anadarko, and largely misses
-California's steam-flooded heavy oil and Appalachia's legacy gas. Because the
-well points are added to the LODES jobs rather than replacing them, a county
-with no fracked wells is left exactly as it was — the gap costs coverage, not
-correctness.
+**What is left of the oil problem, measured.** An earlier draft of this page
+said the map still missed "California's steam-flooded heavy oil and
+Appalachia's legacy gas". Half of that was wrong. Appalachia is not a gap —
+Marcellus and Utica gas is fracked, so Greene County, Pennsylvania has 377
+wells in FracFocus, Washington County 384, Belmont County, Ohio 238. California
+was a gap, and CalGEM closes it.
+
+What remains is **2.5% of the mining line**: 314 counties in the lower 48 with
+a mining line and no site of any kind on them.
+
+| county | line 6 | what it is |
+| --- | ---: | --- |
+| Denver, CO | $2.65bn | head offices |
+| Lafayette, LA | $1.46bn | offshore, booked onshore |
+| Terrebonne, LA | $0.91bn | offshore, booked onshore |
+| Collin, TX | $0.43bn | head offices |
+
+Neither kind is a well-location problem. Headquarters output arguably belongs
+at the headquarters; Gulf production happens in federal water and the county it
+is booked to is where the boats leave from. No well file would fix either.
 
 What the allocation still cannot do is vary productivity *within* a county
 *inside one sector*: two blocks of manufacturing jobs in the same county get
@@ -407,7 +429,7 @@ What it shows, weighted by land value, over the ground that gets a colour:
 | national baseline | 0.4046 years of output |
 | median tile | **0.619 years** |
 | 10th / 90th percentile | 0.146 / 5.4 years |
-| share of land value dearer than the baseline | **64.8%** |
+| share of land value dearer than the baseline | **64.9%** |
 | land value given no ratio, drawn grey | **20.2%** |
 | land value the map found nothing at all on | **0.03%** |
 
@@ -522,7 +544,7 @@ land cover than the total.
 
 So that ground is not given a ratio at all. It is drawn in one flat grey, and
 the legend says what the grey means: no workplace here, so the output is known
-only by county. It is 316,128 tiles and 20.2% of the land value on the page. The wells cut it: 5,753 tiles that had no workplace at all now have one, which is the Permian getting a ratio instead of a flat grey.
+only by county. It is 315,942 tiles and 20.2% of the land value on the page. The wells cut it: 5,939 tiles that had no workplace at all now have one, which is the Permian and the San Joaquin getting a ratio instead of a flat grey.
 That share nearly doubled when the map stopped treating all public land as
 unpriceable and narrowed the white to national parks and military bases: the
 ordinary federal rangeland that came back onto the page is the least resolvable

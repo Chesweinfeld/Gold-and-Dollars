@@ -7,7 +7,7 @@ company's address, and a county with a two-gigawatt station put its utilities
 line wherever the operator files its payroll.  The map showed a bright square
 in the town and nothing at the pit.
 
-Three registers say where the work actually happens:
+Four registers say where the work actually happens:
 
   MSHA      every mine in the country, with a coordinate and a headcount.  The
             headcount is measured at the mine, which is the whole point.
@@ -15,6 +15,8 @@ Three registers say where the work actually happens:
             and a nameplate capacity.
   FracFocus every hydraulically fractured well since 2011, with a coordinate
             and the volume of water the job used.
+  CalGEM    every producing well in California, which is where the oil is
+            lifted by steam rather than by fracturing and FracFocus is blind.
 
 Both are turned into the same unit the rest of the allocation runs on -- jobs
 in a NAICS sector -- and written out as extra carrier points.  Mine employment
@@ -38,12 +40,22 @@ jobs -- its output was being drawn on its gas stations.  Martin County carried
 $14.7bn on seven blocks holding 103 mining jobs.  They now have 1,736 and
 2,982 wells to sit on.
 
-The gap that remains: FracFocus is a disclosure registry for hydraulic
-fracturing, so it holds the Permian, the Bakken, the Eagle Ford, the Marcellus
-and the Anadarko, and largely misses California's steam-flooded heavy oil and
-Appalachia's legacy gas.  Because these points are added to the LODES jobs
-rather than replacing them, a county with no fracked wells is left exactly as
-it was: the gap costs coverage, not correctness.
+Which of the two registers is needed where was worth measuring rather than
+guessing, and the guess was wrong in both directions.  Appalachia is *not* a
+gap: Marcellus and Utica gas is fracked, so Greene County, Pennsylvania has
+377 wells in FracFocus, Washington County 384 and Belmont County, Ohio 238.
+California is: its heavy oil is lifted by cyclic steam rather than by
+fracturing, so Kern County had 296 fracked wells against $5.71bn of output.
+CalGEM's register supplies the other 33,197.
+
+What is left after both is 2.5% of the mining line -- 314 counties in the
+lower 48 with a mining line and no site of any kind.  Denver at $2.65bn and
+Collin County, Texas at $0.43bn are head offices, where the office is arguably
+the right answer.  Lafayette, Terrebonne and Plaquemines in Louisiana and
+Chambers and Galveston in Texas are the coast, where the production is
+offshore in federal water and the county it is booked to is only where the
+boats leave from.  Neither is a well-location problem, and no well file
+would fix them.
 
 Writes data/land/us_facility_points.csv.
 """
@@ -63,6 +75,7 @@ IN = ROOT / "data" / "land" / "inputs"
 DATA = ROOT / "data" / "land"
 MSHA = IN / "msha_mines.zip"
 FRAC = IN / "fracfocus" / "fracfocuscsv.zip"
+CALGEM = IN / "calgem" / "calgem_producing_wells.csv"
 EIA = IN / "eia860.zip"
 COUNTIES = IN / "cb_2023_us_county_500k.zip"
 
@@ -76,6 +89,11 @@ LIVE = {"Active", "Intermittent", "New Mine"}
 # 2023 well are not the same thing at all, and counting the whole registry
 # back to 2011 would put weight on ground that has largely stopped paying.
 WELL_YEARS = (2019, 2023)
+# California's producers, from CalGEM: oil and gas, dry gas, and cyclic steam
+# -- the last being how the San Joaquin's heavy oil is actually lifted, and
+# the reason FracFocus cannot see it.  Steamflood and waterflood wells are
+# injectors supporting these, not producers, so they are left out.
+CALGEM_TYPES = ("OG", "DG", "SC")
 # A generous CONUS box, to catch a coordinate that is plainly wrong.
 BOX = (-125.6, -66.4, 24.0, 49.6)
 
@@ -217,6 +235,38 @@ def wells():
     return out[["lat", "lon", "weight", "kind"]]
 
 
+def calgem():
+    """California's producing wells, which FracFocus does not see.
+
+    Kern County lifts its heavy oil by cyclic steam rather than by fracturing,
+    so the disclosure registry holds 296 wells there against the 5.71bn of
+    output BEA reports.  CalGEM's WellSTAR register holds the rest.
+
+    The count is the weight.  There is no volume here to scale by, and
+    inventing one would be worse than not having it: a producing well is a
+    worksite, and one worksite counts as one.  What that costs is told in
+    wells() -- a shale well and a stripper well are not the same thing -- and
+    it is bounded by the fact that this only redistributes output *inside* a
+    county, where the wells of one field are much alike.
+    """
+    if not CALGEM.exists():
+        sys.exit(f"missing {CALGEM} -- run src/land/fetch_inputs.py first")
+    d = pd.read_csv(CALGEM)
+    for c in ("Latitude", "Longitude"):
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+    n0 = len(d)
+    d = d[d.Latitude.between(BOX[2], BOX[3])
+          & d.Longitude.between(BOX[0], BOX[1])]
+    d = d.drop_duplicates("API")
+    d["weight"] = 1.0
+    print(f"CalGEM: {len(d):,d} producing California wells "
+          f"({', '.join(CALGEM_TYPES)}), {n0 - len(d):,d} dropped for a bad "
+          "coordinate or a duplicate API")
+    out = d.rename(columns={"Latitude": "lat", "Longitude": "lon"})
+    out["kind"] = "calgem"
+    return out[["lat", "lon", "weight", "kind"]]
+
+
 def counties(d):
     """Which county each point falls in, by the shape rather than the record.
 
@@ -243,8 +293,8 @@ def counties(d):
 
 
 def main():
-    m, p, w = mines(), plants(), wells()
-    out = counties(pd.concat([m, p, w], ignore_index=True))
+    m, p, w, c = mines(), plants(), wells(), calgem()
+    out = counties(pd.concat([m, p, w, c], ignore_index=True))
     out.to_csv(DATA / "us_facility_points.csv", index=False)
     n = out.kind.value_counts()
     both = (set(out[out.kind == "mine"].county)
@@ -255,7 +305,7 @@ def main():
           + ", ".join(
               f"{n.get(k, 0):,d} {k}s in "
               f"{out[out.kind == k].county.nunique():,d} counties"
-              for k in ("mine", "plant", "well")) + ")")
+              for k in ("mine", "plant", "well", "calgem")) + ")")
     return 0
 
 

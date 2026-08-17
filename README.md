@@ -118,11 +118,14 @@ one's, so matched one to one government came out at $446,032 a job and
 education at $6,019 in the median county. Those three lines are pooled and
 carried together.
 
-Three registers put the work where LODES cannot. **MSHA** counts a mine's
+Four registers put the work where LODES cannot. **MSHA** counts a mine's
 employees at the mine, **EIA-860** puts 1,274 GW of generating capacity at its
-plants, and **FracFocus** puts 61,936 hydraulically fractured wells at their
+plants, and **FracFocus** and **CalGEM** put 104,753 producing wells at their
 coordinates — all added as carrier points, because a mining company or a
-utility reports its payroll at the head office. The wells are the largest
+utility reports its payroll at the head office. Both well registers are needed:
+Marcellus gas is fracked and FracFocus sees it, but California lifts its heavy
+oil by steam, so Kern County had 296 fracked wells against $5.71bn of output
+and now has 33,197. The wells are the largest
 single correction: Loving County, Texas carries $10.7bn of output and had **not
 one census block with a mining job in it**, so its oil was stranded and drawn
 on the county's gas stations. It now sits on 2,332 points. 57% of the mining
@@ -195,7 +198,7 @@ counted on the ground the dwelling stands on, and the suburb still costs more
 years than it earns, because what a house earns in a year is small beside what
 work earns on the same square foot downtown. The median dollar of American land
 value sits on ground worth 0.619 years of its own output against a national
-0.4046, and 64.8% of it is dearer than the national figure implies. Those are
+0.4046, and 64.9% of it is dearer than the national figure implies. Those are
 measured over the coloured ground — the ground with a workplace on it — and are
 printed on every build rather than typed here.
 

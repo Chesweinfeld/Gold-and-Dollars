@@ -360,15 +360,26 @@ def add_facilities(blocks):
         sys.exit(f"missing {FACILITIES} -- run src/land/build_us_facilities.py")
     f = pd.read_csv(FACILITIES, dtype={"county": str})
     mw = f.loc[f.kind == "plant", "weight"].sum()
-    gal = f.loc[f.kind == "well", "weight"].sum()
-    # Capacity and frac water are not headcounts, so each is put on the job
-    # scale by the national ratio of its sector's jobs to its own total.  Mine
+    # Capacity and wells are not headcounts, so each is put on the job scale
+    # by the national ratio of its sector's jobs to its own total.  Mine
     # employment needs no conversion: MSHA counts people.
     per_mw = blocks.CNS03.sum() / mw if mw > 0 else 0.0
-    per_gal = blocks.CNS02.sum() / gal if gal > 0 else 0.0
+
+    # The two well registers are put on one scale first, so that a Californian
+    # well and a Permian one are comparable before either meets a job.  A
+    # fracked well is measured in units of the median frac, which lets a big
+    # Permian well outweigh a small one; a CalGEM well has no volume to scale
+    # by and counts as one.  That understates a shale well against a stripper
+    # -- but they are almost never in the same county, and this only decides
+    # what happens inside one.
+    frac = f.kind == "well"
+    med = f.loc[frac, "weight"].median() if frac.any() else 1.0
+    units = np.where(frac, f.weight / med, 0.0) + (f.kind == "calgem") * 1.0
+    tot_units = units.sum()
+    per_unit = blocks.CNS02.sum() / tot_units if tot_units > 0 else 0.0
     f["w"] = np.select(
-        [f.kind == "plant", f.kind == "well"],
-        [f.weight * per_mw, f.weight * per_gal],
+        [f.kind == "plant", frac | (f.kind == "calgem")],
+        [f.weight * per_mw, units * per_unit],
         default=f.weight)
 
     add = pd.DataFrame({"county": f.county.to_numpy(),
@@ -378,20 +389,21 @@ def add_facilities(blocks):
         add[c] = 0.0
     # Wells ride CNS02 with the mines: BEA reports mining, quarrying and oil
     # and gas as one line and does not break it out, so one carrier serves it.
-    add["CNS02"] = np.where(f.kind.isin(["mine", "well"]), f.w, 0.0)
+    add["CNS02"] = np.where(f.kind.isin(["mine", "well", "calgem"]), f.w, 0.0)
     add["CNS03"] = np.where(f.kind == "plant", f.w, 0.0)
     add["other"] = 0.0
 
     print(f"facilities: {int((f.kind == 'mine').sum()):,d} mines carrying "
           f"{f.loc[f.kind == 'mine', 'w'].sum():,.0f} employees, "
           f"{int((f.kind == 'plant').sum()):,d} plants carrying "
-          f"{mw/1000:,.0f} GW, and {int((f.kind == 'well').sum()):,d} wells "
-          f"carrying {gal/1e9:,.0f}bn gallons")
+          f"{mw/1000:,.0f} GW, and "
+          f"{int((frac | (f.kind == 'calgem')).sum()):,d} producing wells")
     print(f"  a megawatt of nameplate capacity is weighed as {per_mw:.2f} "
           f"utility jobs ({blocks.CNS03.sum():,.0f} CNS03 jobs over {mw/1000:,.0f} GW)")
-    print(f"  a million gallons of frac water is weighed as {per_gal*1e6:.2f} "
-          f"mining jobs ({blocks.CNS02.sum():,.0f} CNS02 jobs over "
-          f"{gal/1e9:,.0f}bn gallons)")
+    print(f"  {int(frac.sum()):,d} fracked wells and "
+          f"{int((f.kind == 'calgem').sum()):,d} Californian ones come to "
+          f"{tot_units:,.0f} well-units; one is weighed as {per_unit:.2f} "
+          f"mining jobs ({blocks.CNS02.sum():,.0f} CNS02 jobs over the lot)")
     for c, name in (("CNS02", "mining"), ("CNS03", "utilities")):
         was = blocks[c].sum()
         print(f"  {name}: {was:,.0f} LODES jobs plus {add[c].sum():,.0f} at the "

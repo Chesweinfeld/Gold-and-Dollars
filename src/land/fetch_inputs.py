@@ -20,7 +20,9 @@ Five sources, all public:
 Writes data/land/inputs/.  Nothing here is derived; that is build_land_value.py.
 """
 
+import csv
 import io
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -242,6 +244,38 @@ def main():
              frac, "FracFocus")
     print(f"{'FracFocus':<20} {frac.stat().st_size/1e6:6,.0f} MB  "
           "fracked wells, coordinates and water volume")
+
+    # CalGEM's WellSTAR register, for the California wells FracFocus cannot
+    # see.  It comes off an ArcGIS endpoint 2,000 rows at a time rather than as
+    # one file, so it is paged here.
+    cal = OUT / "calgem" / "calgem_producing_wells.csv"
+    if not cal.exists():
+        cal.parent.mkdir(parents=True, exist_ok=True)
+        base = ("https://gis.conservation.ca.gov/server/rest/services/WellSTAR"
+                "/Wells/MapServer/0/query")
+        where = "WellStatus='Active' AND WellType IN ('OG','DG','SC')"
+        rows, off = [], 0
+        print("fetching CalGEM producing wells ...")
+        while True:
+            out = OUT / "calgem" / f"_page{off}.json"
+            curl(f"{base}?where={requests.utils.quote(where)}"
+                 "&outFields=API,Latitude,Longitude,CountyName,WellType"
+                 f"&returnGeometry=false&resultOffset={off}"
+                 "&resultRecordCount=2000&f=json", out, "CalGEM")
+            page = json.loads(out.read_text()).get("features", [])
+            out.unlink()
+            rows += [r["attributes"] for r in page]
+            if len(page) < 2000:
+                break
+            off += 2000
+        cols = ["API", "Latitude", "Longitude", "CountyName", "WellType"]
+        with cal.open("w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=cols)
+            w.writeheader()
+            for r in rows:
+                w.writerow({k: r.get(k) for k in cols})
+    print(f"{'CalGEM wells':<20} {cal.stat().st_size/1e6:6,.1f} MB  "
+          "California's producing wells, which FracFocus cannot see")
 
     # QCEW, for src/land/check_lodes_coverage.py.  Nothing on the map is built
     # from it; it exists so that how well LODES counts the country is a

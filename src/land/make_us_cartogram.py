@@ -137,12 +137,13 @@ its price. Grey is ground with no workplace on it, where the output is known
 only by the county and the map declines to claim a resolution its denominator
 does not have; how much of the page that is, is printed on every build and
 given in the write-up.<br><br>
-<b>What is still misplaced.</b> Mines, power plants and fracked wells now carry
-their own output &mdash; Loving County, Texas has $10.7bn of output and not one
-census block with a mining job on it, so its oil used to be drawn on its gas
-stations. What the well registry does not see is the oil that is not fracked:
-California&rsquo;s steam-flooded heavy oil and Appalachia&rsquo;s legacy gas
-still ride the jobs, and land at the office.<br><br>
+<b>What is still misplaced.</b> Mines, power plants and 104,753 producing wells
+now carry their own output &mdash; Loving County, Texas has $10.7bn of output
+and not one census block with a mining job on it, so its oil used to be drawn
+on its gas stations. What is left is 2.5% of the mining line, in counties with
+no site of any kind: company headquarters, where the office may be the right
+answer anyway, and the Louisiana and Texas coast, where the production is
+offshore and the county it is booked to is only where the boats leave from.<br><br>
 <b>What the blank areas are.</b> The national parks and the military
 installations &mdash; 1.4% of the lower 48 &mdash; are taken out of the
 numerator here, because the land model prices them as though they were for sale
@@ -264,8 +265,9 @@ _SRC_GDP = ("Output: BEA county GDP for 2023 (CAGDP2) on twenty industry "
             "the jobs of its own industry</i>; 13.4% on tract housing "
             "services from the ACS; 0.8% on USDA Cropland Data Layer "
             "hectares, priced against the 2022 Census of Agriculture. Mines "
-            "(MSHA), power plants (EIA-860) and fracked wells (FracFocus) "
-            "carry their own sectors from their own coordinates.")
+            "(MSHA), power plants (EIA-860) and producing wells "
+            "(FracFocus, and CalGEM for California) carry their own sectors "
+            "from their own coordinates.")
 # Written from the constant, not typed: this line said "over a million" for a
 # while after the floor moved to 800,000, which is the map describing itself
 # wrongly.
