@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What American land is worth</title>
+<meta name="description" content="Every square is the same 3.84 km of real ground, sized by its share of the $11.26 trillion of American land value.">
+<!-- What a link preview shows when this is pasted into LinkedIn, Slack or a
+     message.  Without these the card is blank and the post reads as a bare
+     URL, which is most of whether anyone clicks it. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="What American land is worth">
+<meta property="og:description" content="A cartogram of the lower 48 drawn at price rather than at area. Every square is the same 3.84 km of real ground; its size on the page is its share of the $11.26 trillion the land is worth.">
+<meta property="og:image" content="https://chesweinfeld.github.io/Gold-and-Dollars/figures/land_value_cartogram.svg">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root { color-scheme: light dark;
+  --ink:#14171a; --muted:#5b6570; --bg:#ffffff; --line:#d8dee6; --panel:#f6f8fa; }
+@media (prefers-color-scheme: dark) {
+  :root { --ink:#e8ecf1; --muted:#9aa6b2; --bg:#0f1216; --line:#2a323c;
+          --panel:#171c22; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.wrap { max-width:760px; margin:0 auto; padding:48px 20px 72px; }
+h1 { font-size:32px; line-height:1.2; margin:0 0 10px; letter-spacing:-0.02em; }
+p.lede { font-size:18px; color:var(--muted); margin:0 0 28px; }
+a.card { display:block; text-decoration:none; color:inherit;
+  border:1px solid var(--line); border-radius:12px; padding:18px 20px;
+  margin-bottom:12px; background:var(--panel); transition:border-color .12s; }
+a.card:hover { border-color:currentColor; }
+a.card b { display:block; font-size:17px; margin-bottom:3px; }
+a.card span { color:var(--muted); font-size:14.5px; }
+h2 { font-size:14px; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--muted); margin:34px 0 12px; font-weight:600; }
+.note { font-size:14px; color:var(--muted); margin-top:32px;
+  border-top:1px solid var(--line); padding-top:18px; }
+.note a { color:inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>What American land is worth</h1>
+<p class="lede">Maps of the lower 48 drawn at price rather than at area. Every
+square is the same 3.84&nbsp;km of real ground; its size on the page is its
+share of what the country&rsquo;s land is worth.</p>
+
+<a class="card" href="figures/land_value_cartogram_us.html">
+  <b>The land-value cartogram &rarr;</b>
+  <span>533,958 tiles carrying $11.26 trillion, from Nolte&rsquo;s 480&nbsp;m
+  price surface. Scroll to zoom, hover for a value.</span></a>
+
+<a class="card" href="figures/land_vs_output_story_us.html">
+  <b>A guided walk, in twelve stops &rarr;</b>
+  <span>What the map shows, one place at a time &mdash; including the three
+  places it is weakest.</span></a>
+
+<h2>Land against what is produced on it</h2>
+
+<a class="card" href="figures/land_vs_output_cartogram_us.html">
+  <b>Price-to-earnings, for the ground &rarr;</b>
+  <span>A tile&rsquo;s land value over the output produced on it: a stock over
+  a flow, so it has units of years.</span></a>
+
+<a class="card" href="figures/land_vs_output_map_us.html">
+  <b>The same thing on an undistorted map &rarr;</b>
+  <span>For readers who would rather see the country its usual shape.</span></a>
+
+<a class="card" href="figures/gdp_cartogram_us.html">
+  <b>American output, drawn where it is produced &rarr;</b>
+  <span>County GDP placed inside each county by what produces it. Read its
+  accuracy note before reading the figure.</span></a>
+
+<h2>Closer in, at the source&rsquo;s native 480 m</h2>
+
+<a class="card" href="figures/land_value_cartogram_nyc.html">
+  <b>New York &rarr;</b><span>The metropolitan cut.</span></a>
+<a class="card" href="figures/land_value_cartogram_bay.html">
+  <b>San Francisco &rarr;</b><span>The metropolitan cut.</span></a>
+
+<p class="note">Land value is Nolte,
+<a href="https://doi.org/10.1073/pnas.2012865117">&ldquo;High-resolution land
+value maps&hellip;&rdquo;</a>, <i>PNAS</i> 117:47 (2020) &mdash; the PLACES
+vacant-land model, fitted to six million arm&rsquo;s-length sales, CC-0.
+Output is BEA county GDP for 2023. Every figure on these pages is regenerated
+from the sources on each build, and the code that does it, with its own account
+of where it is wrong, is at
+<a href="https://github.com/Chesweinfeld/Gold-and-Dollars">github.com/Chesweinfeld/Gold-and-Dollars</a>.</p>
+
+</div>
+</body>
+</html>
