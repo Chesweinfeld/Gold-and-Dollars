@@ -27,7 +27,8 @@ Two things to hold onto while reading the map:
   * The estimates are for land alone (the `vacant` model), so a city block is
     priced as the dirt under the building, not the building.
 
-Writes docs/figures/land_value_cartogram_<cut>.html and
+Writes docs/figures/preview_land_value_us.png, the still that link previews
+use, alongside docs/figures/land_value_cartogram_<cut>.html and
 data/land/us_cartogram_check_<cut>.csv.
 """
 
@@ -965,6 +966,9 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
                      0, 65535).astype("<u2")
         blobs["val2"] = g2[draw].tobytes()
     payload = {k: _b64(v) for k, v in blobs.items()}
+    # The same three arrays the browser is about to be handed, kept in float
+    # so that still() can draw the identical picture without a browser.
+    still_px, still_quads, still_u = px, quads[draw], u[draw]
 
     borders, big = [], {}
     for i, start, n in bidx:
@@ -1002,7 +1006,8 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
                 towns=[[q, round(float(x), 1), round(float(y), 1), k]
                        for (q, (x, y)), k in zip(zip(city_name, cp),
                                                  _town_zoom(cp))],
-                bx=(bx0, by0, bx1, by1), to_px=to_px)
+                bx=(bx0, by0, bx1, by1), to_px=to_px,
+                still=(still_px, still_quads, still_u))
 
 
 # How many names stand at full extent, and how much clear space each one wants,
@@ -1105,6 +1110,89 @@ def _town_zoom(cp):
     return out
 
 
+def still(path, px, quads, u, W, H):
+    """A flat picture of the same tiles, for a link preview.
+
+    The figure is drawn by WebGL in a browser, which is no use to LinkedIn or
+    Slack: they fetch a URL and want an image back.  This draws the identical
+    quads from the identical buffers -- the ones _scene() is about to hand the
+    browser -- so the still cannot come to disagree with the live map.
+
+    The card is 1200x630 because that is the shape every link unfurler crops
+    to; the map is centred in it with its own aspect kept, rather than
+    stretched to fill, because a cartogram stretched is a cartogram lying.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PolyCollection
+
+    CARD_W, CARD_H = 1200, 630
+    stops = np.array([[int(c[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+                      for c in RAMP])
+    # The browser interpolates between the ramp's stops; posterising to the
+    # stops themselves would draw a different map from the live one.
+    t = np.linspace(0, 1, len(stops))
+    lut = np.stack([np.interp(np.linspace(0, 1, 256), t, stops[:, k])
+                    for k in range(3)], axis=1)
+    face = lut[np.clip(u.astype(int), 0, 255)]
+
+    # The card is half again as wide as the country is, so centring the map
+    # leaves two dead margins.  The map takes the right of the frame and the
+    # words take the left, which fills the space and means the picture still
+    # says what it is when it turns up in a feed with the caption stripped.
+    MAP_L = 0.38
+    fig = plt.figure(figsize=(CARD_W / 100, CARD_H / 100), dpi=100)
+    fig.patch.set_facecolor("#ffffff")
+    ax = fig.add_axes([MAP_L, 0, 1 - MAP_L, 1])
+    ax.set_facecolor("#ffffff")
+    ax.axis("off")
+    # Fit the whole country in that panel rather than filling it: a cartogram
+    # cropped has lost the very tiles that make the point, and Florida is the
+    # first thing over the edge.
+    pad = 0.03
+    panel = (CARD_W * (1 - MAP_L)) / CARD_H
+    if W / H > panel:                      # wider than the panel: width binds
+        half_w = W * (1 + pad) / 2.0
+        half_h = half_w / panel
+    else:
+        half_h = H * (1 + pad) / 2.0
+        half_w = half_h * panel
+    ax.set_xlim(W / 2 - half_w, W / 2 + half_w)
+    ax.set_ylim(H / 2 + half_h, H / 2 - half_h)
+    ax.add_collection(PolyCollection(px[quads], facecolors=face,
+                                     edgecolors="none", linewidths=0,
+                                     antialiased=False))
+
+    ink, muted = "#14171a", "#5b6570"
+    fam = ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"]
+    fig.text(0.055, 0.80, "What American\nland is worth", color=ink,
+             fontsize=31, linespacing=1.15, va="top", family=fam, weight="bold")
+    fig.text(0.055, 0.53,
+             "Every square is the same 3.84 km of\n"
+             "real ground. Its size on the page is its\n"
+             "share of the $11.26 trillion the land\n"
+             "in the lower 48 is worth.",
+             color=muted, fontsize=13, linespacing=1.5, va="top", family=fam)
+    # The colour scale, small, so the blues mean something at a glance.
+    bx, by, bw, bh = 0.055, 0.18, 0.26, 0.028
+    for i in range(160):
+        fig.patches.append(plt.Rectangle(
+            (bx + bw * i / 160, by), bw / 160 + 0.0008, bh,
+            transform=fig.transFigure, facecolor=lut[int(i / 159 * 255)],
+            edgecolor="none"))
+    fig.text(bx, by - 0.035, "less valuable", color=muted, fontsize=10,
+             va="top", family=fam)
+    fig.text(bx + bw, by - 0.035, "more", color=muted, fontsize=10,
+             va="top", ha="right", family=fam)
+    fig.text(bx, 0.055, "Land value: Nolte (2020), PNAS 117:47",
+             color=muted, fontsize=10, va="bottom", family=fam)
+    fig.savefig(path, facecolor="#ffffff")
+    plt.close(fig)
+    print(f"-> docs/figures/{path.name} ({CARD_W}x{CARD_H}, "
+          f"{path.stat().st_size/1e3:,.0f} kB)")
+
+
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
            postal, city_name, lab0, real, midx=()):
     FIG.mkdir(parents=True, exist_ok=True)
@@ -1195,6 +1283,8 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
             else "gdp_cartogram")
     out = FIG / f"{stem}_{key.replace('gdp', '').replace('ratioflat', '').replace('ratio', '')}.html"
     out.write_text(html, encoding="utf-8")
+    if key == "us":
+        still(FIG / "preview_land_value_us.png", *s["still"], W, H)
     print(f"\n-> docs/figures/{out.name} ({len(draw):,d} tiles drawn, "
           f"{len(html)/1e6:.1f} MB)")
 
