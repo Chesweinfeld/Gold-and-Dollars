@@ -35,6 +35,7 @@ data/land/us_cartogram_check_<cut>.csv.
 import base64
 import hashlib
 import json
+import subprocess
 import sys
 import zlib
 from pathlib import Path
@@ -303,8 +304,12 @@ def main(argv):
     city_name, city_xy = cities(geo, 420)
     mshapes = metro_bounds(geo, MIN_METRO if geo["window"] is None else 0.0,
                            r["flat"], geo["tx"] * geo["side"] / r["nx"])
-    pts, bidx, midx, lab0 = pack_points(lattice, geo, borders, city_xy,
-                                        metros=mshapes)
+    # Water only on the metropolitan cuts.  The national cut would need a file
+    # per county for three thousand counties to draw rivers a pixel wide.
+    wshapes = (water_bounds(geo, r["flat"], geo["tx"] * geo["side"] / r["nx"])
+               if geo["window"] is not None else None)
+    pts, bidx, midx, widx, lab0 = pack_points(
+        lattice, geo, borders, city_xy, metros=mshapes, water=wshapes)
     if r["flat"]:
         print(f"\n{len(pts):,d} vertices, undeformed "
               f"({len(lattice):,d} lattice + {len(pts)-len(lattice):,d} "
@@ -320,7 +325,8 @@ def main(argv):
                          value.ravel()[tiles]))
 
     render(key, r, value, geo, tiles, quads, moved, len(lattice),
-           bidx, postal, city_name, lab0, real.ravel()[tiles], midx=midx)
+           bidx, postal, city_name, lab0, real.ravel()[tiles], midx=midx,
+           widx=widx)
     return 0
 
 
@@ -536,7 +542,7 @@ def build_mesh(value):
     return lattice, tiles, quads
 
 
-def pack_points(lattice, geo, borders, anchors, metros=None):
+def pack_points(lattice, geo, borders, anchors, metros=None, water=None):
     """Lattice corners, border rings and label anchors in one array.
 
     They all ride the same flow, so the state outlines and their names still
@@ -564,9 +570,85 @@ def pack_points(lattice, geo, borders, anchors, metros=None):
 
     idx = rings(borders.geometry)
     midx = rings(metros.geometry) if metros is not None else []
+    widx = rings(water.geometry) if water is not None else []
     lab0 = n
     chunks.append(np.asarray(anchors, dtype=float))
-    return np.vstack([xy] + chunks), idx, midx, lab0
+    return np.vstack([xy] + chunks), idx, midx, widx, lab0
+
+
+WATER = IN / "water"
+# Water bodies smaller than this are ponds and reservoirs that only clutter a
+# metropolitan cut.  The East River is 15 km2, the Hudson in this window far
+# larger, so a square kilometre keeps everything that reads as water.
+WATER_MIN_KM2 = 1.0
+
+
+def water_bounds(geo, flat, cell):
+    """The water in a metropolitan cut, ridden through the same flow.
+
+    A cartogram drawn at land value shrinks worthless ground to nothing, and
+    water is worth nothing, so the East River closes up and Manhattan fuses
+    into Brooklyn.  That is the algorithm being right and the picture being
+    unreadable: a reader who cannot find the river cannot find the island.
+
+    Drawing the water rings through the same mesh puts it back honestly.  They
+    are squeezed to a line rather than restored to their true width, which is
+    exactly what the map has done to them, and a line is enough to tell one
+    borough from the next.
+
+    Census TIGER publishes water polygons per county; only the counties this
+    window touches are fetched, and they are cached like every other input.
+    """
+    box = shapely.geometry.box(
+        geo["x0"], geo["y1"] - geo["ty"] * geo["side"],
+        geo["x0"] + geo["tx"] * geo["side"], geo["y1"])
+    c = gpd.read_file(
+        f"zip://{IN / 'cb_2023_us_county_500k.zip'}").to_crs(ALBERS)
+    hit = c[c.intersects(box)].GEOID.tolist()
+    if not hit:
+        return None
+
+    WATER.mkdir(parents=True, exist_ok=True)
+    frames, missing = [], 0
+    for geoid in sorted(hit):
+        f = WATER / f"tl_2023_{geoid}_areawater.zip"
+        if not f.exists():
+            r = subprocess.run(
+                ["curl", "-sSL", "--fail", "--max-time", "180", "-o", str(f),
+                 "https://www2.census.gov/geo/tiger/TIGER2023/AREAWATER/"
+                 f"tl_2023_{geoid}_areawater.zip"],
+                capture_output=True, text=True)
+            if r.returncode != 0:
+                f.unlink(missing_ok=True)
+                missing += 1
+                continue
+        try:
+            frames.append(gpd.read_file(f"zip://{f}"))
+        except Exception:
+            missing += 1
+    if not frames:
+        return None
+    g = pd.concat(frames, ignore_index=True)
+    g = gpd.GeoDataFrame(g, geometry="geometry", crs=frames[0].crs).to_crs(ALBERS)
+    g = g[g.geometry.area >= WATER_MIN_KM2 * 1e6]
+    g["geometry"] = g.geometry.intersection(box)
+    g = g[~g.geometry.is_empty & (g.geometry.area > 0)].reset_index(drop=True)
+    if not len(g):
+        return None
+    # The same two tolerances the state outlines get, for the same reason:
+    # these rings ride the flow and cannot carry detail finer than its grid.
+    tol = max(geo["tx"] * geo["side"] / DRAW_W / MAX_ZOOM, 5.0)
+    if not flat and cell:
+        tol = max(tol, cell / 2.0)
+    g["geometry"] = [q.simplify(tol).buffer(0) for q in g.geometry]
+    if not flat:
+        g["geometry"] = [densify(q, max(geo["side"], 2000.0))
+                         for q in g.geometry]
+    g = g[~g.geometry.is_empty].reset_index(drop=True)
+    print(f"  {len(g):,d} water bodies over {WATER_MIN_KM2:g} km2 from "
+          f"{len(hit) - missing:,d} counties"
+          + (f" ({missing} had no water file)" if missing else ""))
+    return g
 
 
 _METRO_CACHE = {}
@@ -866,7 +948,7 @@ def _areas(p, quads):
 # --- drawing --------------------------------------------------------------
 
 def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
-           lab0, real, tile_value, areas, midx=()):
+           lab0, real, tile_value, areas, midx=(), widx=()):
     """Everything both pages need: the drawing box, the colours, the payload.
 
     The document figure and the scrolled story draw the same tiles with the
@@ -995,10 +1077,18 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
             continue
         metros.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
                       + "Z")
+    waters = []
+    for _, start, n in widx:
+        ring = to_px(moved[start:start + n])
+        if len(ring) < 4:
+            continue
+        waters.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
+                      + "Z")
     cp = to_px(moved[lab0:])
     codes, lp = _drawn_anchors(big, postal)
     return dict(W=W, H=H, base=base, span=span, lo=lo, hi=hi, draw=draw,
                 payload=payload, borders=borders, metros=metros,
+                waters=waters,
                 density=density,
                 labels=[[q, round(float(x), 1), round(float(y), 1), k]
                         for (q, (x, y)), k in zip(zip(codes, lp),
@@ -1194,7 +1284,7 @@ def still(path, px, quads, u, W, H):
 
 
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
-           postal, city_name, lab0, real, midx=()):
+           postal, city_name, lab0, real, midx=(), widx=()):
     FIG.mkdir(parents=True, exist_ok=True)
     tile_value = value.ravel()[tiles]
     areas = _areas(moved, quads)
@@ -1224,7 +1314,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
               f"{np.corrcoef(share_a[good], share_v[good])[0,1]:.4f}")
 
     s = _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal,
-               city_name, lab0, real, tile_value, areas, midx=midx)
+               city_name, lab0, real, tile_value, areas, midx=midx, widx=widx)
     W, H = s["W"], s["H"]
     base, span, lo, hi = s["base"], s["span"], s["lo"], s["hi"]
     draw, payload, borders = s["draw"], s["payload"], s["borders"]
@@ -1267,7 +1357,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
                            if r["diverge"] else "")),
         n=len(draw),
         km2=f"{side*side:.6f}",
-        metros=json.dumps(s["metros"]),
+        metros=json.dumps(s["metros"]), waters=json.dumps(s["waters"]),
         data=json.dumps(payload), base=f"{base:.6f}" if r["diverge"] else "1",
         borders=json.dumps(borders),
         labels=json.dumps(s["labels"]), towns=json.dumps(s["towns"]),
@@ -1356,7 +1446,8 @@ def _money(x):
 _GL_JS = """const W={W}, H={H}, NT={n}, KM2={km2}, BASE={base}, MAXK={maxk};
 const RAMP={ramp}, NOVAL={noval};
 const D={data};
-const BORDERS={borders}, METROS={metros}, LABELS={labels}, TOWNS={towns};
+const BORDERS={borders}, METROS={metros}, WATERS={waters};
+const LABELS={labels}, TOWNS={towns};
 
 // The geometry travels deflated; the browser's own decompressor unpacks it,
 // so everything below waits on a promise.
@@ -1380,6 +1471,9 @@ const tip=document.getElementById('tip'), hud=document.getElementById('hud');
 
 document.getElementById('bd').innerHTML =
   BORDERS.map(d=>`<path class="sb" d="${{d}}"/>`).join('');
+const _wt=document.getElementById('wt');
+if(_wt) _wt.innerHTML =
+  WATERS.map(d=>`<path class="wr" d="${{d}}"/>`).join('');
 const _mb=document.getElementById('mb');
 // Casing first, then the dashes, so every ring is legible wherever it crosses
 // a dark tile -- two passes rather than one path each, to keep all the casing
@@ -1530,9 +1624,9 @@ svg.ov {{ pointer-events:none; }}
 /* State codes are orientation, not content: they should be findable when the
    eye goes looking and invisible when it is reading the tiles.  The city names
    sit above them in both size and weight. */
-.sl {{ fill:var(--mapink); fill-opacity:.5; font-size:11px; font-weight:600;
+.sl {{ fill:var(--mapink); fill-opacity:.78; font-size:11px; font-weight:600;
   text-anchor:middle; paint-order:stroke; stroke:var(--mapbg);
-  stroke-opacity:.7; stroke-width:2.6px; stroke-linejoin:round; }}
+  stroke-opacity:.85; stroke-width:2.8px; stroke-linejoin:round; }}
 @media (prefers-reduced-motion: reduce) {{ #tip {{ transition:none; }} }}
 #tip {{ position:absolute; pointer-events:none; background:var(--bg);
   border:1px solid var(--line); border-radius:6px; padding:6px 9px;
@@ -1576,6 +1670,12 @@ svg.ov {{ pointer-events:none; }}
    hairline dash on top of the tiles is not visible enough to read as a change. */
 #mb {{ visibility:hidden; }}
 #mb.on {{ visibility:visible; }}
+/* Water, on a cartogram, has been squeezed to almost nothing -- that is what
+   the flow does to ground worth nothing.  Drawn as a thin dark line it is
+   still legible as the East River, which is what tells Manhattan from
+   Brooklyn.  Filled as well, for the flat map, where it keeps its width. */
+.wr {{ fill:#b9cbdb; fill-opacity:.9; stroke:#41617f; stroke-opacity:.9;
+  stroke-width:1.1; vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 .mrc {{ fill:none; stroke:var(--mapbg); stroke-opacity:.9; stroke-width:3.6;
   vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 .mr {{ fill:none; stroke:#000; stroke-opacity:.9; stroke-width:1.6;
@@ -1624,7 +1724,8 @@ value.</p>
 <div id="stage">
   <canvas id="cv"></canvas>
   <svg class="ov" id="ov" viewBox="0 0 {W} {H}" preserveAspectRatio="none">
-    <g id="sc"><g id="mb"></g><g id="bd"></g><g id="lb"></g><g id="tw"></g></g>
+    <g id="sc"><g id="wt"></g><g id="mb"></g><g id="bd"></g><g id="lb"></g
+      ><g id="tw"></g></g>
   </svg>
   <div id="tip"></div>
   <div id="hud">1.0x</div>

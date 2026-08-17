@@ -47,7 +47,7 @@ def main():
     borders, postal = state_borders(
         geo, flat=r["flat"], cell=geo["tx"] * geo["side"] / r["nx"])
     city_name, city_xy = cities(geo, 420)
-    pts, bidx, midx, lab0 = pack_points(lattice, geo, borders, city_xy)
+    pts, bidx, midx, widx, lab0 = pack_points(lattice, geo, borders, city_xy)
     tile_value = value.ravel()[tiles]
     s = _scene(r, geo, tiles, quads, pts, len(lattice), bidx, postal,
                city_name, lab0, real.ravel()[tiles], tile_value,
@@ -502,6 +502,7 @@ def write(s, steps, st, geo):
         km2=f"{(geo['side']/1000.0)**2:.6f}", base=f"{B:.6f}",
         data=json.dumps(s["payload"]), borders=json.dumps(s["borders"]),
         metros=json.dumps([]),   # the story has no metro layer
+        waters=json.dumps([]),   # nor a water one: it is the national cut
         labels=json.dumps(s["labels"]), towns=json.dumps(s["towns"]),
         ramp=json.dumps(DIVERGE), noval=json.dumps(NOVAL),
         ramp_css=", ".join(f"{c} {i/(len(DIVERGE)-1)*100:.0f}%"
