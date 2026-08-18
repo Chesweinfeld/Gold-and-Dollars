@@ -11,9 +11,13 @@ This script pours that surface into a density-equalising cartogram.  Tiles are
 uniform ground and what varies is what the ground is worth, so the tile that
 swells is the expensive one.  There are three cuts:
 
-    make_us_cartogram.py us     3.84 km tiles, the whole conterminous US
-    make_us_cartogram.py nyc    480 m tiles, 220 km around New York
-    make_us_cartogram.py bay    480 m tiles, 220 km around San Francisco
+    make_us_cartogram.py us            3.84 km tiles, the conterminous US
+    make_us_cartogram.py new-york      480 m tiles, one metropolitan area
+    make_us_cartogram.py baltimore     480 m tiles, one metropolitan area
+
+The national map is a fixed cut; a metro cut is derived from the metro, so
+every metropolitan area the map names can be asked for by its slug and the
+frame comes from that metro's own Census boundary.  See `metro_cut`.
 
 The metro cuts run the source at its native resolution: a 480 m tile in
 Manhattan is about two city blocks, which is as close to a parcel as any
@@ -182,11 +186,11 @@ build."""
 # run at 480 m, which is where "parcel level" stops being a figure of speech --
 # a 480 m tile in Manhattan is about two city blocks.
 def _cut(block, nx, title, where, window, src="land", mesh=None,
-         diverge=False, flat=False, title_note=None):
+         diverge=False, flat=False, title_note=None, clip=None):
     land = src == "land"
     return dict(
         block=block, nx=nx, title=title, where=where, window=window, src=src,
-        mesh=mesh, diverge=diverge, flat=flat,
+        mesh=mesh, diverge=diverge, flat=flat, clip=clip,
         # Relaxation helps the land field and hurts the output field.  Land
         # prices vary smoothly; output does not -- it stands in point masses at
         # the blocks where the jobs are, and feeding a map full of collapsed
@@ -259,21 +263,42 @@ def slug(name):
 
 
 def metro_cut(key):
-    """A 220 km window on any metro the map names, built on demand.
+    """A cut of one metropolitan area, cut to that area's own boundary.
 
     The five hand-written cuts were five entries in REGIONS.  Eighty-one of
     them would be eighty-one entries saying the same thing, so a cut for a
-    metro is derived from the metro itself: its name gives the slug, its
-    label point gives the centre, and everything else is what the other
+    metro is derived from the metro itself: its name gives the slug, its own
+    Census boundary gives the shape, and everything else is what the other
     metropolitan cuts already use.
+
+    The frame was a 220 km square on the metro's label point.  A square is the
+    wrong object twice over.  It is one size for metros that are not one size,
+    so 220 km around Baltimore -- a metro 142 km across -- reached
+    Philadelphia, Washington and Harrisburg, three other metros each with a
+    cut of its own, and the reader who searched for one city was shown four.
+    And even sized to the metro it would still be a square, which is not what
+    a metropolitan area is.  So the boundary itself is the cut: the window is
+    only how much raster has to be read, and every tile whose centre falls
+    outside the Census polygon is dropped, along with the towns, the water and
+    the state lines outside it.  What is left on the page is the metro and
+    nothing else.
     """
     for name, x, y in _metros(MIN_METRO):
         if slug(name) != key:
             continue
+        shape = _METRO_CACHE["shapes"].set_index("GEOID").loc[
+            _METRO_CACHE["label"][name]].geometry
+        x0, y0, x1, y1 = shape.bounds
+        # A margin of a few tiles so the window cannot cut the boundary it is
+        # there to hold; the clip, not the window, is what sets the edge.
+        pad = GRID["res"] * 4
+        km = max(x1 - x0, y1 - y0) / 1000 + 2 * pad / 1000
         lon, lat = pyproj.Transformer.from_crs(
-            ALBERS, 4326, always_xy=True).transform(x, y)
+            ALBERS, 4326, always_xy=True).transform(
+                (x0 + x1) / 2, (y0 + y1) / 2)
         return _cut(1, 3072, f"What land is worth around {name}",
-                    f"a 220 km square around {name}", (lon, lat, 220))
+                    f"the {name} metropolitan area, as the Census draws it",
+                    (lon, lat, km), clip=shape)
     return None
 
 
@@ -342,6 +367,9 @@ def main(argv):
 
     value, geo, real = tile_values(r["block"], r["window"], r["src"],
                                    private=r["diverge"])
+    geo["clip"] = r["clip"]
+    if r["clip"] is not None:
+        value, real = clip_tiles(value, real, geo)
     lattice, tiles, quads = build_mesh(value)
     extent, field = ((None, None) if r["flat"]
                      else solver_field(value, geo, r["nx"]))
@@ -420,6 +448,53 @@ def tile_values(block, window, src="land", private=False):
           f"${out.max()/1e9:,.2f}bn, a factor of "
           f"{out.max()/out[out>0].min():,.0f}")
     return out, geo, real
+
+
+def clip_tiles(value, real, geo):
+    """Drop every tile whose centre falls outside the cut's boundary.
+
+    A rectangular window is what the raster reader wants; it is not what the
+    reader of the map wants.  The boundary is rasterised onto the very lattice
+    the tiles are cut from -- same origin, same 480 m pitch -- so a tile is in
+    or out by where its own centre lies, with no partial tiles and no
+    resampling.  Value outside is set to zero, which is how the rest of this
+    script already spells "not part of this map".
+    """
+    x0, y1 = geo["x0"], geo["y1"]
+    x1, y0 = x0 + geo["tx"] * geo["side"], y1 - geo["ty"] * geo["side"]
+    keep = rasterize([(geo["clip"], 1)], out_shape=(geo["ty"], geo["tx"]),
+                     transform=from_bounds(x0, y0, x1, y1,
+                                           geo["tx"], geo["ty"]),
+                     fill=0, all_touched=False).astype(bool)
+    was, total = int((value > 0).sum()), value.sum()
+    value = np.where(keep, value, 0.0)
+    print(f"  clipped to the boundary: {int((value > 0).sum()):,d} of "
+          f"{was:,d} tiles kept, holding {value.sum()/total:.1%} of the "
+          "land value that was in the window")
+    return value, real & keep
+
+
+def _inside(geo, x, y):
+    """Which of these points fall in the cut: the window, or its boundary."""
+    x0, y1 = geo["x0"], geo["y1"]
+    x1, y0 = x0 + geo["tx"] * geo["side"], y1 - geo["ty"] * geo["side"]
+    m = (x >= x0) & (x <= x1) & (y >= y0) & (y <= y1)
+    clip = geo.get("clip")
+    return m if clip is None else m & shapely.contains_xy(clip, x, y)
+
+
+def _clipbox(geo):
+    """The window, and on a cut with a boundary, the boundary itself.
+
+    Everything drawn over the tiles -- state lines, water, town labels, the
+    metro outline -- is selected against this, so that none of it survives on
+    ground the tiles no longer cover.
+    """
+    box = shapely.geometry.box(
+        geo["x0"], geo["y1"] - geo["ty"] * geo["side"],
+        geo["x0"] + geo["tx"] * geo["side"], geo["y1"])
+    clip = geo.get("clip")
+    return box if clip is None else box.intersection(clip)
 
 
 def _geo(block, window):
@@ -650,9 +725,7 @@ def water_bounds(geo, flat, cell):
     Census TIGER publishes water polygons per county; only the counties this
     window touches are fetched, and they are cached like every other input.
     """
-    box = shapely.geometry.box(
-        geo["x0"], geo["y1"] - geo["ty"] * geo["side"],
-        geo["x0"] + geo["tx"] * geo["side"], geo["y1"])
+    box = _clipbox(geo)
     c = gpd.read_file(
         f"zip://{IN / 'cb_2023_us_county_500k.zip'}").to_crs(ALBERS)
     hit = c[c.intersects(box)].GEOID.tolist()
@@ -716,9 +789,7 @@ def metro_bounds(geo, floor, flat, cell):
     if m is None:
         _metros(floor)
         m = _METRO_CACHE["shapes"]
-    box = shapely.geometry.box(
-        geo["x0"], geo["y1"] - geo["ty"] * geo["side"],
-        geo["x0"] + geo["tx"] * geo["side"], geo["y1"])
+    box = _clipbox(geo)
     g = m.copy()
     g["geometry"] = g.geometry.intersection(box)
     g = g[~g.geometry.is_empty & (g.geometry.area > 0)].reset_index(drop=True)
@@ -817,15 +888,18 @@ def _metros(floor):
         # The label's name comes from Natural Earth and the outline from the
         # Census, so the two have to be tied together here or nothing
         # downstream can say which polygon "Miami" means.
-        label[p.NAME] = r.GEOID
-        out.append((p.NAME, p.geometry.x, p.geometry.y))
+        # Natural Earth writes "Washington,  D.C." with two spaces, which is
+        # a typographic accident, not a name.
+        nm = re.sub(r"\s+", " ", p.NAME).strip()
+        label[nm] = r.GEOID
+        out.append((nm, p.geometry.x, p.geometry.y))
     _METRO_CACHE["label"] = label
     return out
 
 
 GAZ = IN / "gaz" / "2023_Gaz_place_national.txt"
-# Below this a place is a hamlet, and on a 220 km window there are thousands
-# of them.  The reveal rule decides which are actually drawn at a given zoom;
+# Below this a place is a hamlet, and on a metropolitan window there are
+# thousands of them.  The reveal rule decides which are drawn at a given zoom;
 # this only decides which are candidates.
 PLACE_MIN = 4_000
 
@@ -835,7 +909,7 @@ def _places(geo):
 
     The metro cuts named only the metro areas themselves, which on a
     metropolitan window is six or eight labels for a whole conurbation: New
-    York, Bridgeport, Trenton and little else across 220 km that holds several
+    York, Bridgeport, Trenton and little else across a window that holds several
     hundred towns.  Natural Earth cannot help -- it is a global gazetteer and
     carries ten places in that window.
 
@@ -861,10 +935,7 @@ def _places(geo):
     g, lat, lon = g[ok], lat[ok], lon[ok]
     x, y = pyproj.Transformer.from_crs(4326, ALBERS, always_xy=True).transform(
         lon.to_numpy(), lat.to_numpy())
-    x0, y1 = geo["x0"], geo["y1"]
-    x1 = x0 + geo["tx"] * geo["side"]
-    y0 = y1 - geo["ty"] * geo["side"]
-    m = (x >= x0) & (x <= x1) & (y >= y0) & (y <= y1)
+    m = _inside(geo, x, y)
     out = pd.DataFrame({"name": g.NAME.to_numpy()[m], "x": x[m], "y": y[m],
                         "pop": g["pop"].to_numpy()[m]})
     # "Boston city", "Cambridge city", "Newton city" -- the gazetteer's legal
@@ -888,16 +959,15 @@ def cities(geo, n):
     zoom makes room: see _town_zoom, which is what decides when each is seen.
 
     The million-person floor is a continental rule and does not survive being
-    carried onto a 220 km window, where it left New York with one name on the
-    page and the Bay Area with three.  A metro cut is already inside a single
+    carried onto a metropolitan window, where it left New York with one name
+    on the page and the Bay Area with three.  A metro cut is already inside a single
     metropolitan area, so every metro in view earns its name there; what stays
     constant across the cuts is that a name means a metro area, which is the
     part that matters.
     """
     floor = MIN_METRO if geo["window"] is None else 0.0
     out = [t for t in _metros(floor)
-           if geo["x0"] <= t[1] <= geo["x0"] + geo["tx"] * geo["side"]
-           and geo["y1"] - geo["ty"] * geo["side"] <= t[2] <= geo["y1"]][:n]
+           if _inside(geo, np.array([t[1]]), np.array([t[2]]))[0]][:n]
     print(f"  {len(out)} metro areas"
           + (f" over {floor:,.0f} people" if floor else "")
           + " in this cut, named at their largest city")
@@ -974,9 +1044,7 @@ def state_borders(geo, flat=False, cell=None):
     western borders for no gain at all.  On a flat cut nothing bends, so it is
     skipped.
     """
-    box = shapely.geometry.box(
-        geo["x0"], geo["y1"] - geo["ty"] * geo["side"],
-        geo["x0"] + geo["tx"] * geo["side"], geo["y1"])
+    box = _clipbox(geo)
     g = _outlines()
     g["geometry"] = g.geometry.intersection(box)
     g = g[~g.geometry.is_empty & (g.geometry.area > 0)].reset_index(drop=True)

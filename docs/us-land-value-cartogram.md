@@ -5,13 +5,37 @@ land from GDP, because no global measurement of urban land value exists. The
 United States is the one large country where that compromise is unnecessary,
 and this is what the map looks like when you do not have to make it up.
 
-Three figures, all built by `src/land/make_us_cartogram.py`:
+Twenty-one figures, all built by `src/land/make_us_cartogram.py`:
 
 | figure | tile | tiles | what it covers |
 | --- | --- | --- | --- |
 | `docs/figures/land_value_cartogram_us.html` | 3.84 km | 533,958 | the conterminous United States |
-| `docs/figures/land_value_cartogram_nyc.html` | 480 m | 148,854 | 220 km around New York |
-| `docs/figures/land_value_cartogram_bay.html` | 480 m | 145,267 | 220 km around San Francisco |
+| `docs/figures/land_value_cartogram_<metro>.html` | 480 m | 28k&ndash;307k | one metropolitan area, cut to its Census boundary |
+
+The metro cuts are not written out one by one. A cut is derived from the metro
+itself — its name gives the file name, its Census boundary gives the shape —
+so any of the 82 metropolitan areas the map names can be asked for by its
+slug, and `CUT_N` decides how many are built for the site. The twenty largest
+are built today:
+
+| metro | tiles | metro | tiles | metro | tiles |
+| --- | ---: | --- | ---: | --- | ---: |
+| Riverside | 307,159 | Chicago | 78,903 | San Diego | 47,723 |
+| Phoenix | 164,063 | New York | 72,575 | Detroit | 44,991 |
+| Houston | 102,293 | Washington, D.C. | 69,080 | Boston | 40,935 |
+| Atlanta | 100,321 | Seattle | 67,085 | Baltimore | 30,233 |
+| Dallas | 99,684 | Miami | 58,831 | Tampa | 29,681 |
+| Denver | 94,242 | Los Angeles | 54,937 | San Francisco | 28,395 |
+| Minneapolis | 82,829 | Philadelphia | 53,130 | | |
+
+A metropolitan area is not a square, so a cut is not one either. The boundary
+is rasterised onto the same 480 m lattice the tiles are cut from, and a tile
+is in or out by where its own centre falls; the state lines, the water and the
+town labels are selected against the same boundary. That is what keeps
+Washington, Philadelphia and Harrisburg off a map of Baltimore. It also means
+the cut holds the metro and only the metro: the San Francisco cut is the
+five-county San Francisco&ndash;Oakland&ndash;Fremont MSA, and San Jose, which
+is a metropolitan area in its own right, is not in it.
 
 Every tile is the same patch of ground. What varies is what the ground is
 worth, and a density-equalising cartogram then gives each tile an area equal to
@@ -104,8 +128,12 @@ land value.
 | cut | median \|error\| | top 2,000 tiles | value-weighted mean | correlation of area with value |
 | --- | ---: | ---: | ---: | ---: |
 | `us` (3.84 km) | 6.9% | 4.2% | 13.9% | 0.950 |
-| `nyc` (480 m) | 4.1% | 0.8% | 3.4% | 0.972 |
-| `bay` (480 m) | 2.9% | 1.0% | 3.1% | 0.9995 |
+| `new-york` (480 m) | 4.6% | 0.9% | 3.4% | 0.9994 |
+| `san-francisco` (480 m) | 2.9% | 1.2% | 2.9% | 0.9995 |
+| `riverside` (480 m) | 1.6% | 0.8% | 3.1% | 0.9995 |
+
+Across the twenty metro cuts the median tile error runs from 1.5% (Detroit) to
+6.5% (Boston).
 
 The metro cuts converge much better than the global grid map does, for the
 obvious reason: within one metro the price range is a factor of a few hundred,
@@ -209,7 +237,9 @@ remaining fifth, no amount of assembly helps.
 ## Reproducing
 
 ```bash
-python3 src/land/make_us_cartogram.py us && python3 src/land/make_us_cartogram.py nyc && python3 src/land/make_us_cartogram.py bay && python3 src/land/parcel_feasibility.py
+python3 src/land/make_us_cartogram.py us
+python3 src/land/make_us_cartogram.py new-york      # or any metro's slug
+python3 src/land/parcel_feasibility.py
 ```
 
 The source raster is fetched by `src/land/fetch_inputs.py`. It is a 299 MB
