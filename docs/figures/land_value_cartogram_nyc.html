@@ -104,6 +104,24 @@ svg.ov { pointer-events:none; }
   text-decoration:none; touch-action:manipulation; }
 .ctl a:hover { border-color:currentColor; }
 .ctl .sp { flex:1 1 auto; }
+/* The search sits in the same row and is sized like the rest of it.  The list
+   is positioned against this span rather than the row, so it opens under the
+   box wherever the row has wrapped to. */
+.find { position:relative; display:inline-flex; }
+#find { font:inherit; font-size:13px; min-height:38px; width:190px;
+  padding:0 12px; border:1px solid var(--line); border-radius:8px;
+  background:var(--bg); color:var(--ink); }
+#find::placeholder { color:var(--muted); }
+#find:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
+#hits { position:absolute; z-index:5; left:0; top:calc(100% + 4px);
+  min-width:100%; margin:0; padding:4px; list-style:none;
+  background:var(--bg); border:1px solid var(--line); border-radius:8px;
+  box-shadow:0 6px 24px rgba(0,0,0,.18); max-height:260px; overflow:auto; }
+#hits li { padding:7px 10px; border-radius:6px; cursor:pointer;
+  white-space:nowrap; font-size:13.5px; }
+#hits li[aria-selected="true"], #hits li:hover { background:var(--panel); }
+#hits li i { font-style:normal; color:var(--muted); font-size:12px;
+  margin-left:8px; }
 /* A switch rather than a button: a plain button that toggles a layer gives the
    reader no way to tell, before clicking, that it is a two-state control, and
    no way to tell afterwards which state it left behind. */
@@ -192,6 +210,10 @@ value.</p>
      press first reached the pan/zoom surface, which captured the pointer and
      took the click with it; outside, a button is just a button. -->
 <div class="ctl">
+  <span class="find"><input id="find" type="search" autocomplete="off"
+      spellcheck="false" placeholder="find a metro area" role="combobox"
+      aria-expanded="false" aria-autocomplete="list" aria-controls="hits"
+    ><ul id="hits" role="listbox" hidden></ul></span>
   <button id="reset" type="button">reset view</button>
   <button id="metros" type="button" role="switch" aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>metro areas</button>
@@ -616,6 +638,88 @@ showTheme();
 // Following the system means following it as it changes, not only at load.
 mq.addEventListener('change',()=>{
   if(!document.documentElement.dataset.theme) repaint();
+});
+
+// Every metro the map names is already in TOWNS with the place the flow put
+// it, so searching them needs no new data -- only a way to ask.
+const fbox=document.getElementById('find'), hits=document.getElementById('hits');
+let hitList=[], hitAt=-1;
+function goTo(t) {
+  // Close enough to read the streets of a metro, and the same for each, so
+  // that two searches are comparable.  A cut of one metro is already close,
+  // so it zooms less.
+  const k=Math.min(MAXK, TOWNS.length > 20 ? 14 : 4);
+  view.k=k; view.ox=W/2-t[1]*k; view.oy=H/2-t[2]*k;
+  clampView(); draw();
+}
+function placeHits() {
+  // The control row sits under a tall map, so a list that always opened
+  // downwards would open off the bottom of the window, which is where the
+  // first version of this put it.  It goes above the box unless there is
+  // room below.
+  const r=fbox.getBoundingClientRect();
+  const room = innerHeight - r.bottom;
+  const below = room > Math.min(280, innerHeight * 0.4);
+  hits.style.top = below ? 'calc(100% + 4px)' : 'auto';
+  hits.style.bottom = below ? 'auto' : 'calc(100% + 4px)';
+}
+function closeHits() {
+  hits.hidden=true; hits.innerHTML=''; hitList=[]; hitAt=-1;
+  fbox.setAttribute('aria-expanded','false');
+}
+function showHits() {
+  const q=fbox.value.trim().toLowerCase();
+  if(!q) { closeHits(); return; }
+  // Names that start with the query first, then names that merely contain it,
+  // so typing "san" offers San Antonio before Santa Rosa's neighbours.
+  const starts=[], has=[];
+  for(const t of TOWNS) {
+    const n=t[0].toLowerCase();
+    if(n.startsWith(q)) starts.push(t);
+    else if(n.includes(q)) has.push(t);
+  }
+  hitList=starts.concat(has).slice(0,8);
+  if(!hitList.length) {
+    hits.innerHTML='<li aria-disabled="true"><i>no metro of that name</i></li>';
+    hits.hidden=false; fbox.setAttribute('aria-expanded','true');
+    placeHits();
+    return;
+  }
+  hits.innerHTML=hitList.map((t,i)=>
+    `<li role="option" data-i="${i}" aria-selected="${i===0}">`+
+    `${t[0].replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'})[c])}`+
+    `</li>`).join('');
+  hitAt=0;
+  hits.hidden=false; fbox.setAttribute('aria-expanded','true');
+  placeHits();
+}
+function pick(i) {
+  const t=hitList[i];
+  if(!t) return;
+  fbox.value=t[0]; closeHits(); fbox.blur(); goTo(t);
+}
+fbox.addEventListener('input',showHits);
+fbox.addEventListener('focus',showHits);
+fbox.addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown' || e.key==='ArrowUp') {
+    if(hits.hidden || !hitList.length) return;
+    e.preventDefault();
+    hitAt=(hitAt + (e.key==='ArrowDown'?1:hitList.length-1)) % hitList.length;
+    for(const li of hits.children)
+      li.setAttribute('aria-selected', +li.dataset.i===hitAt);
+  } else if(e.key==='Enter') {
+    e.preventDefault(); pick(hitAt < 0 ? 0 : hitAt);
+  } else if(e.key==='Escape') {
+    closeHits(); fbox.blur();
+  }
+});
+hits.addEventListener('mousedown',e=>{
+  // mousedown rather than click: the input's blur would close the list first.
+  const li=e.target.closest('li[data-i]');
+  if(li) { e.preventDefault(); pick(+li.dataset.i); }
+});
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.find')) closeHits();
 });
 
 const mbtn=document.getElementById('metros'), mlayer=document.getElementById('mb');
