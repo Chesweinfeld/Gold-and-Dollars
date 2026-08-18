@@ -350,7 +350,8 @@ def main(argv):
 
     render(key, r, value, geo, tiles, quads, moved, len(lattice),
            bidx, postal, city_name, lab0, real.ravel()[tiles], midx=midx,
-           widx=widx)
+           widx=widx,
+           mgeo=(mshapes.GEOID.tolist() if mshapes is not None else []))
     return 0
 
 
@@ -771,7 +772,7 @@ def _metros(floor):
     j = gpd.sjoin(g, m[["GEOID", "primary", "geometry"]], predicate="within")
 
     _METRO_CACHE["shapes"] = m[["GEOID", "NAME", "pop", "geometry"]]
-    out = []
+    out, label = [], {}
     for _, r in m.iterrows():
         sub = j[j.GEOID == r.GEOID]
         big = sub.sort_values("POP_MAX", ascending=False)
@@ -789,7 +790,12 @@ def _metros(floor):
         if not len(hit):
             continue                          # San Juan: no place in the file
         p = hit.iloc[0]
+        # The label's name comes from Natural Earth and the outline from the
+        # Census, so the two have to be tied together here or nothing
+        # downstream can say which polygon "Miami" means.
+        label[p.NAME] = r.GEOID
         out.append((p.NAME, p.geometry.x, p.geometry.y))
+    _METRO_CACHE["label"] = label
     return out
 
 
@@ -971,8 +977,26 @@ def _areas(p, quads):
 
 # --- drawing --------------------------------------------------------------
 
+def _named_boxes(mbox, mgeo):
+    """Metro extents keyed by the name the map prints, not by a row number.
+
+    The label comes from Natural Earth and the outline from the Census, and
+    _metros() is the only place that knows which belongs to which; this turns
+    its record into something the page can look up when a reader types.
+    """
+    by_geoid = {v: k for k, v in _METRO_CACHE.get("label", {}).items()}
+    out = {}
+    for i, b in mbox.items():
+        if i >= len(mgeo):
+            continue
+        name = by_geoid.get(mgeo[i])
+        if name:
+            out[name] = [round(v, 1) for v in b]
+    return out
+
+
 def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
-           lab0, real, tile_value, areas, midx=(), widx=()):
+           lab0, real, tile_value, areas, midx=(), widx=(), mgeo=()):
     """Everything both pages need: the drawing box, the colours, the payload.
 
     The document figure and the scrolled story draw the same tiles with the
@@ -1094,13 +1118,25 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
         # at the deepest zoom, which is below what the screen can resolve.
         borders.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
                        + "Z")
-    metros = []
-    for _, start, n in midx:
+    metros, mbox = [], {}
+    for i, start, n in midx:
         ring = to_px(moved[start:start + n])
         if len(ring) < 4:
             continue
         metros.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
                       + "Z")
+        # The extent of the metro as the flow left it, so that searching for
+        # one can frame the whole thing rather than drop a pin in the middle
+        # of it at some arbitrary zoom.  A cartogram is exactly the case where
+        # the reader cannot guess how big a place has become.
+        # Named apart from the colour scale's lo/hi, which live in this same
+        # function and which an earlier version of these two lines quietly
+        # overwrote with a pair of coordinates.
+        rlo, rhi = ring.min(0), ring.max(0)
+        prev = mbox.get(i)
+        mbox[i] = ([rlo[0], rlo[1], rhi[0], rhi[1]] if prev is None else
+                   [min(prev[0], rlo[0]), min(prev[1], rlo[1]),
+                    max(prev[2], rhi[0]), max(prev[3], rhi[1])])
     waters = []
     for _, start, n in widx:
         ring = to_px(moved[start:start + n])
@@ -1112,7 +1148,7 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     codes, lp = _drawn_anchors(big, postal)
     return dict(W=W, H=H, base=base, span=span, lo=lo, hi=hi, draw=draw,
                 payload=payload, borders=borders, metros=metros,
-                waters=waters,
+                waters=waters, mbox=_named_boxes(mbox, mgeo),
                 density=density,
                 labels=[[q, round(float(x), 1), round(float(y), 1), k]
                         for (q, (x, y)), k in zip(zip(codes, lp),
@@ -1308,7 +1344,7 @@ def still(path, px, quads, u, W, H):
 
 
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
-           postal, city_name, lab0, real, midx=(), widx=()):
+           postal, city_name, lab0, real, midx=(), widx=(), mgeo=()):
     FIG.mkdir(parents=True, exist_ok=True)
     tile_value = value.ravel()[tiles]
     areas = _areas(moved, quads)
@@ -1338,7 +1374,8 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
               f"{np.corrcoef(share_a[good], share_v[good])[0,1]:.4f}")
 
     s = _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal,
-               city_name, lab0, real, tile_value, areas, midx=midx, widx=widx)
+               city_name, lab0, real, tile_value, areas, midx=midx,
+               widx=widx, mgeo=mgeo)
     W, H = s["W"], s["H"]
     base, span, lo, hi = s["base"], s["span"], s["lo"], s["hi"]
     draw, payload, borders = s["draw"], s["payload"], s["borders"]
@@ -1423,6 +1460,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         n=len(draw),
         km2=f"{side*side:.6f}",
         metros=json.dumps(s["metros"]), waters=json.dumps(s["waters"]),
+        mbox=json.dumps(s["mbox"]),
         data=json.dumps(payload), base=f"{base:.6f}" if r["diverge"] else "1",
         borders=json.dumps(borders),
         labels=json.dumps(s["labels"]), towns=json.dumps(s["towns"]),
@@ -1533,7 +1571,7 @@ try {{
   if(_t && _t !== 'system') document.documentElement.dataset.theme = _t;
 }} catch(e) {{}}
 const D={data};
-const BORDERS={borders}, METROS={metros}, WATERS={waters};
+const BORDERS={borders}, METROS={metros}, WATERS={waters}, MBOX={mbox};
 const LABELS={labels}, TOWNS={towns};
 
 // The geometry travels deflated; the browser's own decompressor unpacks it,
@@ -2154,11 +2192,24 @@ mq.addEventListener('change',()=>{{
 const fbox=document.getElementById('find'), hits=document.getElementById('hits');
 let hitList=[], hitAt=-1;
 function goTo(t) {{
-  // Close enough to read the streets of a metro, and the same for each, so
-  // that two searches are comparable.  A cut of one metro is already close,
-  // so it zooms less.
-  const k=Math.min(MAXK, TOWNS.length > 20 ? 14 : 4);
-  view.k=k; view.ox=W/2-t[1]*k; view.oy=H/2-t[2]*k;
+  const b=MBOX[t[0]];
+  if(b) {{
+    // Frame the metropolitan area itself, which is what was asked for and the
+    // only honest answer on a cartogram: Miami and Bakersfield are not the
+    // same size on this page, so putting each at the same zoom would show a
+    // sixth of one and six of the other.  The margin leaves the outline clear
+    // of the edge.
+    const pad=1.25;
+    const bw=Math.max((b[2]-b[0])*pad, 1), bh=Math.max((b[3]-b[1])*pad, 1);
+    const k=Math.min(MAXK, Math.max(1, Math.min(W/bw, H/bh)));
+    const cx=(b[0]+b[2])/2, cy=(b[1]+b[3])/2;
+    view.k=k; view.ox=W/2-cx*k; view.oy=H/2-cy*k;
+  }} else {{
+    // No outline for this one -- it fell outside the cut, or the Census does
+    // not draw it -- so fall back to the point and a fixed zoom.
+    const k=Math.min(MAXK, TOWNS.length > 20 ? 14 : 4);
+    view.k=k; view.ox=W/2-t[1]*k; view.oy=H/2-t[2]*k;
+  }}
   clampView(); draw();
 }}
 function placeHits() {{
