@@ -38,15 +38,26 @@
    over a black country.  Better to draw the dark map properly than to have one
    made for us badly. */
 :root { --mapbg:#ffffff; --mapink:#14171a; --mapline:#000000;
-  --mapwater:#b9cbdb; --mapwaterline:#41617f; }
+  --mapwater:#b9cbdb; --mapwaterline:#41617f;
+  /* City names are keyed separately from state codes, because the two sit on
+     opposite ends of the scale.  A city name is always on the dearest tiles
+     -- that is what makes it a city -- and the dark scale draws those
+     brightest, so light ink there disappears exactly where the map is most
+     worth reading.  State codes sit over rural ground, which is dimmest, and
+     want the opposite.  On white both wanted the same thing, which is why
+     one pair did until now. */
+  --maptownink:#14171a; --maptownhalo:#ffffff; }
 @media (prefers-color-scheme: dark) {
   :root { --mapbg:#0d1117; --mapink:#e8ecf1; --mapline:#ffffff;
-    --mapwater:#16222d; --mapwaterline:#6f93b3; }
+    --mapwater:#16222d; --mapwaterline:#6f93b3;
+    --maptownink:#0a0e13; --maptownhalo:#dbe7f3; }
 }
 :root[data-theme="dark"] { --mapbg:#0d1117; --mapink:#e8ecf1;
-  --mapline:#ffffff; --mapwater:#16222d; --mapwaterline:#6f93b3; }
+  --mapline:#ffffff; --mapwater:#16222d; --mapwaterline:#6f93b3;
+  --maptownink:#0a0e13; --maptownhalo:#dbe7f3; }
 :root[data-theme="light"] { --mapbg:#ffffff; --mapink:#14171a;
-  --mapline:#000000; --mapwater:#b9cbdb; --mapwaterline:#41617f; }
+  --mapline:#000000; --mapwater:#b9cbdb; --mapwaterline:#41617f;
+  --maptownink:#14171a; --maptownhalo:#ffffff; }
 * { box-sizing: border-box; }
 body { margin:0; background:var(--bg); color:var(--ink);
   font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
@@ -146,10 +157,10 @@ svg.ov { pointer-events:none; }
 .ticks.yrs span:first-child { text-align:left; }
 .ticks.yrs span:last-child { text-align:right; }
 .ticks.yrs i { font-style:normal; opacity:.62; }
-.tn { fill:var(--mapink); font-size:12px; font-weight:600; text-anchor:middle;
-  paint-order:stroke; stroke:var(--mapbg); stroke-width:3.5px;
-  stroke-linejoin:round; }
-.td { fill:var(--mapbg); stroke:var(--mapink); stroke-width:1;
+.tn { fill:var(--maptownink); font-size:12px; font-weight:600;
+  text-anchor:middle; paint-order:stroke; stroke:var(--maptownhalo);
+  stroke-opacity:.92; stroke-width:3.8px; stroke-linejoin:round; }
+.td { fill:var(--maptownhalo); stroke:var(--maptownink); stroke-width:1;
   vector-effect:non-scaling-stroke; }
 .notes { margin-top:22px; font-size:13.5px; color:var(--muted); max-width:78ch; }
 .notes b { color:var(--ink); font-weight:600; }
