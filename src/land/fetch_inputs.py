@@ -25,6 +25,7 @@ import io
 import json
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pandas as pd
@@ -182,13 +183,31 @@ def main():
     # are clipped to the shoreline, which is what makes the coasts read.
     for name, what in (("state", "state outlines, 1:500,000"),
                        ("county", "county outlines, for allocation"),
-                       ("place", "city limits, for the metro cuts")):
+                       ("place", "city limits, for the metro cuts"),
+                       ("cousub", "towns and townships, which in twenty "
+                                  "states are the municipal government")):
         tiger = OUT / f"cb_2023_us_{name}_500k.zip"
         if not tiger.exists():
             curl(f"https://www2.census.gov/geo/tiger/GENZ2023/shp/{tiger.name}",
                  tiger, "Census TIGER")
         print(f"{tiger.name[:20]:<20} {tiger.stat().st_size/1024:6,.0f} KB  "
               f"{what}")
+
+    # The gazetteers carry FUNCSTAT, which is the only field that says whether
+    # a unit is a government or a statistical area wearing the same name.  Two
+    # of them: places, and county subdivisions.
+    gaz = OUT / "gaz"
+    gaz.mkdir(parents=True, exist_ok=True)
+    for name, what in (("place", "places, with their populations"),
+                       ("cousubs", "county subdivisions, with FUNCSTAT")):
+        txt = gaz / f"2023_Gaz_{name}_national.txt"
+        if not txt.exists():
+            z = gaz / f"{txt.stem}.zip"
+            curl("https://www2.census.gov/geo/docs/maps-data/data/gazetteer/"
+                 f"2023_Gazetteer/{z.name}", z, "Census Gazetteer")
+            with zipfile.ZipFile(z) as zf:
+                zf.extractall(gaz)
+        print(f"{txt.name[:20]:<20} {txt.stat().st_size/1024:6,.0f} KB  {what}")
 
     # The Cropland Data Layer: 2 GB zipped, 3.3 GB of 30 m raster, in the same
     # Albers grid everything else here is cut on.  Only src/land/

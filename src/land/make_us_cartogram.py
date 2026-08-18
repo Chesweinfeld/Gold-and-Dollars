@@ -353,10 +353,15 @@ _SRC_GDP = ("Output: BEA county GDP for 2023 (CAGDP2) on twenty industry "
 _SRC_NAMES = (f"Cities: Census metropolitan areas over {MIN_METRO:,.0f} "
               "people (ACS 2023), at their largest place.")
 
-_SRC_LIMITS = ('City limits: Census incorporated places, 2023 cartographic '
-               'boundaries at 1:500,000 &mdash; census designated places are '
-               'not drawn, because they have no government and so no '
-               'boundary.')
+_SRC_LIMITS = ('City limits: Census incorporated places <i>and</i> county '
+               'subdivisions, 2023 cartographic boundaries at 1:500,000, '
+               'kept where the Census records the unit as an active '
+               'government. That second file is what draws the towns of New '
+               'England and New York and the townships of New Jersey, '
+               'Pennsylvania and the Midwest, which are governments but not '
+               '&ldquo;places&rdquo;. Census designated places and the '
+               'statistical townships of the other thirty states are not '
+               'drawn: they have no government, and so no boundary.')
 _SRC_HOODS = ('Neighbourhoods: OpenStreetMap contributors, '
               '<a href="https://www.openstreetmap.org/copyright">ODbL</a>. '
               'No official dataset of American neighbourhoods exists; these '
@@ -802,25 +807,65 @@ def water_bounds(geo, flat, cell):
 
 
 PLACES = IN / "cb_2023_us_place_500k.zip"
+COUSUBS = IN / "cb_2023_us_cousub_500k.zip"
+GAZDIR = IN / "gaz"
 # A ring smaller than this on a metro cut is a village of a few streets, and
 # at the zoom where it would be legible the reader is already inside it.
 MUNI_MIN_KM2 = 0.5
+# Two boundaries this close to identical are one boundary drawn twice.  Every
+# New Jersey municipality is both a place and a county subdivision with the
+# same outline, so without this the whole state is drawn twice over.
+SAME_SHAPE = 0.01          # symmetric difference, as a share of the area
+
+
+def _active(gdf, gaz):
+    """Keep the units that are governments, by the Census's own flag.
+
+    FUNCSTAT is the field that says whether a unit actually governs: `A` for
+    an active government, `S` for a statistical area that only looks like one.
+    Everything else here could have been guessed from the name and would have
+    been guessed wrong.  A census designated place is named like a town and
+    has no government.  Iowa, Arkansas and North Carolina have thousands of
+    "townships" that are lines on a survey, while the identically named
+    townships of Pennsylvania and Michigan are governments with a budget.  The
+    twenty states where county subdivisions govern are not written down here;
+    they fall out of the flag.
+    """
+    f = pd.read_csv(gaz, sep="\t", dtype=str)
+    f.columns = [c.strip() for c in f.columns]
+    ok = set(f.GEOID[f.FUNCSTAT == "A"])
+    return gdf[gdf.GEOID.isin(ok)]
 
 
 def _muni():
-    """Every incorporated place in the country, once, cached.
+    """Every municipal boundary in the country, once, cached.
 
-    LSAD 57 is a census designated place -- a name the Census gives to a
-    settlement that has no government.  A CDP is drawn on plenty of maps and
-    it is a real place, but it is not a municipal boundary, and a layer called
-    city limits that included them would be claiming a line exists where none
-    does.  So they are dropped, and the layer is thinner in the parts of the
-    country that are genuinely unincorporated.
+    A municipality is not one kind of object.  In most of the country it is an
+    incorporated place -- a city, a village, a borough -- and the ground
+    between them is unincorporated county.  In twenty states it is also, or
+    instead, a county subdivision: the towns of New England and New York, the
+    townships of New Jersey, Pennsylvania and the Midwest, which are general
+    purpose governments covering every acre of their county with no gaps.
+
+    Drawing only places is what left Long Island half empty.  Nassau County's
+    villages are places and were drawn; Hempstead, Oyster Bay, Islip, Babylon
+    and Brookhaven are towns, which in New York are county subdivisions and
+    not places at all, so the lines a reader would call the town lines were
+    missing from exactly the ground they cover.  Both layers are the answer,
+    and FUNCSTAT is what keeps the statistical impostors out of each.
     """
     g = _MUNI_CACHE.get("all")
     if g is None:
-        g = gpd.read_file(f"zip://{PLACES}").to_crs(ALBERS)
-        g = g[g.LSAD != "57"].reset_index(drop=True)
+        cols = ["GEOID", "NAME", "ALAND", "geometry"]
+        pl = _active(gpd.read_file(f"zip://{PLACES}").to_crs(ALBERS),
+                     GAZDIR / "2023_Gaz_place_national.txt")[cols]
+        cs = _active(gpd.read_file(f"zip://{COUSUBS}").to_crs(ALBERS),
+                     GAZDIR / "2023_Gaz_cousubs_national.txt")[cols]
+        # Places first, so that where a place and a subdivision are the same
+        # ground it is the place that survives the dedupe below.
+        g = pd.concat([pl.assign(kind="place"), cs.assign(kind="cousub")],
+                      ignore_index=True)
+        g = gpd.GeoDataFrame(g, geometry="geometry", crs=pl.crs)
         _MUNI_CACHE["all"] = g
     return g
 
@@ -837,7 +882,9 @@ def muni_bounds(geo, flat, cell):
     g = g[g.intersects(box)]
     g["geometry"] = g.geometry.intersection(box)
     g = g[~g.geometry.is_empty & (g.geometry.area > MUNI_MIN_KM2 * 1e6)]
-    g = g.sort_values("ALAND", ascending=False).reset_index(drop=True)
+    g = g.sort_values(["kind", "ALAND"], ascending=[True, False])
+    g = g.reset_index(drop=True)
+    g = g[_distinct(g)].reset_index(drop=True)
     tol = max(geo["tx"] * geo["side"] / DRAW_W / MAX_ZOOM, 5.0)
     if not flat and cell:
         tol = max(tol, cell / 2.0)
@@ -846,8 +893,40 @@ def muni_bounds(geo, flat, cell):
         g["geometry"] = [densify(q, max(geo["side"], 2000.0))
                          for q in g.geometry]
     g = g[~g.geometry.is_empty].reset_index(drop=True)
-    print(f"  {len(g):,d} incorporated places with a boundary to draw")
+    n = g.kind.value_counts()
+    print(f"  {len(g):,d} municipal boundaries to draw "
+          f"({n.get('place', 0):,d} incorporated places, "
+          f"{n.get('cousub', 0):,d} towns and townships)")
     return g
+
+
+def _distinct(g):
+    """Drop a boundary that is another boundary already in the frame.
+
+    A municipality can be a place and a county subdivision at once -- every
+    one in New Jersey is, with the same outline under both names -- and two
+    identical rings are one line drawn twice, at twice the vertices.  So a
+    subdivision goes only if some place is the same ground: symmetric
+    difference under a hundredth of the area.  Not name matching, which would
+    keep Boston's town beside Boston's city on a technicality and drop a
+    Springfield that happened to share a name with a township in the next
+    county.
+    """
+    keep = np.ones(len(g), dtype=bool)
+    places = g[g.kind == "place"]
+    if not len(places) or not (g.kind == "cousub").any():
+        return keep
+    tree = shapely.STRtree(places.geometry.values)
+    for i in np.nonzero((g.kind == "cousub").to_numpy())[0]:
+        q = g.geometry.iloc[i]
+        a = q.area
+        for j in tree.query(q):
+            o = places.geometry.iloc[j]
+            if abs(o.area - a) < SAME_SHAPE * a and \
+                    q.symmetric_difference(o).area < SAME_SHAPE * a:
+                keep[i] = False
+                break
+    return keep
 
 
 _MUNI_CACHE = {}
@@ -1143,7 +1222,7 @@ def cities(geo, n):
     swollen parts are the cities.
 
     They come out in metro-population order, and the page reveals them as the
-    zoom makes room: see _town_zoom, which is what decides when each is seen.
+    zoom makes room: see _label_zoom, which is what decides when each is seen.
 
     The million-person floor is a continental rule and does not survive being
     carried onto a metropolitan window, where it left New York with one name
@@ -1500,29 +1579,159 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
         n_town = len(cp)
     tp, hp = cp[:n_town], cp[n_town:]
     tname, hname = city_name[:n_town], city_name[n_town:]
+    townk = _label_zoom(tp, tname, TOWNS_AT_FULL)
+    # Neighbourhoods are tested against the town names as well as each other:
+    # a neighbourhood under a town name is exactly the collision the reader
+    # notices, because the two are the same kind of thing at different sizes.
+    hoodk = _label_zoom(hp, hname, HOODS_AT_FULL, floor=HOOD_FLOOR,
+                        font=HOOD_FONT, dy=0.0,
+                        fixed=_placed(tp, tname, townk))
+    hid = sum(1 for k in townk + hoodk if k > MAX_ZOOM)
+    if hid:
+        print(f"  {hid:,d} of {len(townk) + len(hoodk):,d} names have no "
+              "clear space at any zoom this map reaches, and are not drawn")
     codes, lp = _drawn_anchors(big, postal)
     return dict(W=W, H=H, base=base, span=span, lo=lo, hi=hi, draw=draw,
                 payload=payload, borders=borders, metros=metros,
                 waters=waters, munis=munis, mbox=_named_boxes(mbox, mgeo),
                 hoods=[[q, round(float(x), 1), round(float(y), 1), k]
-                       for (q, (x, y)), k in zip(zip(hname, hp),
-                                                 _hood_zoom(hp))],
+                       for (q, (x, y)), k in zip(zip(hname, hp), hoodk)
+                       if k <= MAX_ZOOM],
                 density=density,
                 labels=[[q, round(float(x), 1), round(float(y), 1), k]
                         for (q, (x, y)), k in zip(zip(codes, lp),
                                                   _state_zoom(lp))],
                 towns=[[q, round(float(x), 1), round(float(y), 1), k]
-                       for (q, (x, y)), k in zip(zip(tname, tp),
-                                                 _town_zoom(tp))],
+                       for (q, (x, y)), k in zip(zip(tname, tp), townk)
+                       if k <= MAX_ZOOM],
                 bx=(bx0, by0, bx1, by1), to_px=to_px,
                 still=(still_px, still_quads, still_u))
 
 
-# How many names stand at full extent, and how much clear space each one wants,
-# in drawing units.  A name is about 80 units wide at this font, so 70 tolerates
-# a little overlap and relies on the halo behind the text for the rest.
+# How many names stand at full extent.  Room is an area, so the count that
+# fits grows with the square of the zoom.
 TOWNS_AT_FULL = 60
-TOWN_CLEAR = 40.0
+# A name is a box, not a point.  These convert it to one, in drawing units on
+# the 2,000-unit viewBox at the 1,100 px reference width the reveal rule is
+# written against: a character of the label font is about 6.4 px wide and the
+# line about 14 px tall, and one screen pixel is 2000/1100 units.
+UNIT_PX = DRAW_W / 1100.0
+CHAR_W = 6.4 * UNIT_PX
+LINE_H = 14.0 * UNIT_PX
+LABEL_PAD = 10.0           # a little air, and the halo, around each box
+# A text anchor is a baseline, and a baseline is not the middle of the line:
+# the letters stand about a quarter of an em above it.  Placing the box on the
+# anchor rather than on the ink is what left SoHo sitting under New York.
+BASELINE = 0.25
+
+
+def _boxes(names, font=1.0, dy=-0.7):
+    """Half-width, half-height and centre offset of each drawn name."""
+    w = np.array([len(n) * CHAR_W * font for n in names]) / 2 + LABEL_PAD
+    h = np.full(len(names), LINE_H * font / 2 + LABEL_PAD / 2)
+    off = (dy - BASELINE) * 12.0 * font * UNIT_PX
+    return w, h, np.full(len(names), off)
+
+
+def _label_zoom(pos, names, at_full, floor=0.0, font=1.0, dy=-0.7, fixed=None):
+    """The zoom at which each name appears, so that no two names overlap.
+
+    Two things decide it and the later one wins.
+
+    Rank: room on the page is an area, so the i-th name's turn comes at
+    sqrt(i / at_full).
+
+    Room: a name is unreadable if another name is sitting on it, however high
+    its rank.  The rule used to test a 40-unit circle around the anchor, which
+    is the wrong shape for a word: "South Farmingdale" is nearly two hundred
+    units wide and fourteen tall, so a circle that cleared its height cleared
+    a fifth of its width, and on Long Island the names ran into each other --
+    "Wes New Cassel" where Westbury and New Cassel were both drawn.  So the
+    test is the drawn box.  Two boxes stop overlapping once the zoom has
+    pulled them apart on *either* axis, so the zoom a pair needs is the
+    cheaper of the two separations.
+
+    The part that is easy to get wrong is which pairs need testing at all.  A
+    pair is on the page together at every zoom above the *later* of the two,
+    so what has to hold is that the later of the two is not below what the
+    pair needs.  If the neighbour already waits that long this name is free --
+    by the time both are drawn they are apart anyway.  If it does not, this
+    name waits instead.  An earlier version asked whether the neighbour was on
+    the page *yet*, at the zoom being considered, and so skipped every
+    neighbour that appears later than this one -- which is how North Merrick
+    came out at 1.95 against North Bellmore's 2.00 and the two were drawn on
+    top of each other at every zoom above 2.  Rank is not order of appearance.
+
+    Measuring it on the *drawn* positions, after the flow, is the whole point:
+    a cartogram pulls Oakland away from San Francisco, so on that map the two
+    separate earlier than on the flat one, and the rule follows the map
+    instead of second-guessing it.
+    """
+    pos = np.asarray(pos, dtype=float).reshape(-1, 2)
+    if not len(pos):
+        return []
+    hw, hh, off = _boxes(names, font, dy)
+    fx, fy, fw, fh, fo, fk = ((np.empty(0),) * 6 if fixed is None else fixed)
+    out = np.zeros(len(pos))
+    for i in range(len(pos)):
+        k = max(float(np.sqrt((i + 1) / at_full)), floor)
+        px = np.concatenate([pos[:i, 0], fx])
+        if len(px):
+            py = np.concatenate([pos[:i, 1], fy])
+            pw = np.concatenate([hw[:i], fw])
+            ph = np.concatenate([hh[:i], fh])
+            po = np.concatenate([off[:i], fo])
+            pk = np.concatenate([out[:i], fk])
+            need = np.minimum(_clear(px - pos[i, 0], 0.0, pw + hw[i]),
+                              _clear(py - pos[i, 1], po - off[i],
+                                     ph + hh[i]))
+            # Only the neighbours that arrive before the pair has come apart.
+            late = need[pk < need]
+            if len(late):
+                k = max(k, float(late.max()))
+        out[i] = k
+    return [round(float(k), 3) for k in out]
+
+
+def _clear(d, c, size):
+    """The zoom from which two boxes are apart on this axis, and stay apart.
+
+    The gap between two names has two parts that behave differently under
+    zoom.  The ground between their anchors is map, so it grows with the zoom.
+    The offset from an anchor to the middle of its own line -- the `dy` that
+    lifts a name above its dot -- is drawn at a constant size on the screen,
+    so in map terms it *shrinks* as the reader goes in.  An earlier version
+    added the two together as if both were map, which made SoHo and New York
+    look fifteen units apart at every zoom when the ground between them is one
+    and a half, and drew one over the other from 4.9x up.
+
+    So the separation at zoom k is `d*k + c`, and the box is clear when that
+    reaches `size`.  It is a V in k, zero where the shrinking offset exactly
+    cancels the growing ground, so what is wanted is the far side of the V:
+    the zoom past which it never comes back.
+    """
+    d, c, size = np.broadcast_arrays(np.asarray(d, float),
+                                     np.asarray(c, float),
+                                     np.asarray(size, float))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t1 = (size - c) / d
+        t2 = (-size - c) / d
+    out = np.maximum(np.maximum(t1, t2), 0.0)
+    # Anchors on exactly the same line: the offsets alone decide it, at every
+    # zoom, so either they never touch or they never part.
+    flat = d == 0
+    if flat.any():
+        out = np.where(flat, np.where(np.abs(c) >= size, 0.0, np.inf), out)
+    return out
+
+
+def _placed(pos, names, ks, font=1.0, dy=-0.7):
+    """One layer's boxes, for the next layer to be tested against."""
+    pos = np.asarray(pos, dtype=float).reshape(-1, 2)
+    if not len(pos):
+        return (np.empty(0),) * 6
+    hw, hh, off = _boxes(names, font, dy)
+    return (pos[:, 0], pos[:, 1], hw, hh, off, np.asarray(ks, dtype=float))
 
 
 def _drawn_anchors(big, postal):
@@ -1585,67 +1794,14 @@ def _state_zoom(lp):
     return out
 
 
-def _town_zoom(cp):
-    """The zoom at which each place name appears, from where the flow put it.
-
-    Two things decide it and the later one wins.
-
-    Rank: room on the page is an area, so the count that fits grows with the
-    square of the zoom and the i-th name's turn comes at sqrt(i / 80).
-
-    Separation: a name is unreadable if a bigger name is sitting on it, however
-    high its rank.  So it also waits until the gap to the nearest larger place
-    is worth `TOWN_CLEAR` on screen.  Measuring that on the *drawn* positions,
-    after the flow, is the whole point: a cartogram pulls Oakland away from San
-    Francisco, so on that map the two separate earlier than on the flat one,
-    and the rule follows the map instead of second-guessing it.
-
-    This is what keeps Natural Earth's agglomeration figures from embarrassing
-    the map.  Its population for Irvine is the Anaheim-Santa Ana total, which
-    ranks it fifteenth in the country -- above San Diego -- and it would sit on
-    top of Los Angeles at full extent.  The separation term holds it back until
-    there is room for it, without anyone having to curate a list of names.
-    """
-    out = []
-    for i, p in enumerate(cp):
-        by_rank = np.sqrt((i + 1) / TOWNS_AT_FULL)
-        if i == 0:
-            out.append(round(float(by_rank), 3))
-            continue
-        d = float(np.min(np.hypot(*(cp[:i] - p).T)))
-        by_room = TOWN_CLEAR / max(d, 1e-6)
-        out.append(round(float(max(by_rank, by_room)), 3))
-    return out
-
-
 # How many neighbourhood names stand at full extent -- none: a neighbourhood
 # is not a landmark at the scale of a whole metropolitan area, and at that zoom
 # the towns are still coming in.  The floor is what holds them back; the same
-# rank-and-separation rule then brings them in behind it.
+# rank-and-box rule then brings them in behind it.
 HOODS_AT_FULL = 3
-HOOD_CLEAR = 34.0
 HOOD_FLOOR = 2.5
+HOOD_FONT = 10.5 / 12.0        # the neighbourhood font against the town font
 HOODS_MAX = 400
-
-
-def _hood_zoom(hp):
-    """The zoom at which each neighbourhood name appears.
-
-    The same two terms as _town_zoom -- rank, and clearance from the names
-    already on the page -- with a floor under both, because a neighbourhood
-    should never be the first thing a reader sees.  It is a name for ground
-    they have already zoomed into.
-    """
-    out = []
-    for i, q in enumerate(hp):
-        by_rank = np.sqrt((i + 1) / HOODS_AT_FULL)
-        if i == 0:
-            out.append(round(float(max(by_rank, HOOD_FLOOR)), 3))
-            continue
-        d = float(np.min(np.hypot(*(hp[:i] - q).T)))
-        by_room = HOOD_CLEAR / max(d, 1e-6)
-        out.append(round(float(max(by_rank, by_room, HOOD_FLOOR)), 3))
-    return out
 
 
 def still(path, px, quads, u, W, H):
@@ -2026,9 +2182,9 @@ document.getElementById('lb').innerHTML =
   LABELS.map(l=>`<text class="sl" data-k="${{l[3]}}" x="${{l[1]}}" `+
     `y="${{l[2]}}">${{l[0]}}</text>`).join('');
 // Each place carries the zoom at which it appears, worked out in
-// _town_zoom() from where the flow actually put it.  Deriving it here from the
-// rank alone could not see the drawn positions, so it had no way to know that
-// two names were on top of each other.
+// _label_zoom() from where the flow actually put it.  Deriving it here from
+// the rank alone could not see the drawn positions, so it had no way to know
+// that two names were on top of each other.
 document.getElementById('nh').innerHTML =
   HOODS.map(l=>`<g class="tg" data-k="${{l[3]}}">`+
     `<text class="nn" x="${{l[1]}}" y="${{l[2]}}">${{l[0]}}</text></g>`)
