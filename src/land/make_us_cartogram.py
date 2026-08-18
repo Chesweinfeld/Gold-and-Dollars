@@ -43,6 +43,8 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyproj
+import re
 import rasterio
 import shapely.geometry
 import shapely.ops
@@ -222,20 +224,6 @@ def _cut(block, nx, title, where, window, src="land", mesh=None,
 REGIONS = {
     "us": _cut(8, 4608, "What American land is worth",
                "the contiguous United States", None),
-    "nyc": _cut(1, 3072, "What land is worth around New York",
-                "a 220 km square around New York", (-74.0, 40.75, 220)),
-    "bay": _cut(1, 3072, "What land is worth around San Francisco",
-                "a 220 km square around San Francisco", (-122.3, 37.8, 220)),
-    # The centres are the downtowns, and the box is wide enough to hold the
-    # built-up area rather than the administrative city: Los Angeles reaches
-    # to Riverside, Chicago across the state line into Indiana, Miami down the
-    # coast to Homestead and out to the edge of the Everglades.
-    "la": _cut(1, 3072, "What land is worth around Los Angeles",
-               "a 220 km square around Los Angeles", (-118.1, 34.0, 220)),
-    "chi": _cut(1, 3072, "What land is worth around Chicago",
-                "a 220 km square around Chicago", (-87.7, 41.85, 220)),
-    "mia": _cut(1, 3072, "What land is worth around Miami",
-                "a 220 km square around Miami", (-80.4, 26.0, 220)),
     "usgdp": _cut(8, 4608, "American output, drawn where it is produced",
                   "the contiguous United States", None, "gdp"),
     # Same geometry as `us` -- area is still land value -- but coloured by how
@@ -251,6 +239,43 @@ REGIONS = {
                         "the contiguous United States", None,
                         diverge=True, flat=True),
 }
+
+# How many metros get a cut of their own.  Each costs about eight minutes to
+# solve and four megabytes to serve, so this is a budget rather than a
+# principle: raise it and rebuild to give more of them one.  Everything below
+# the line still gets framed on the national map when searched.
+CUT_N = 20
+
+
+def cut_slugs():
+    """The metros that have a 480 m cut, biggest first, name -> slug."""
+    return {name: slug(name) for name, _, _ in _metros(MIN_METRO)[:CUT_N]}
+
+
+def slug(name):
+    """A metro's name as a file name: "Washington, D.C." -> washington-dc."""
+    return re.sub(r"-+", "-",
+                  re.sub(r"[^a-z0-9]+", "-", name.lower())).strip("-")
+
+
+def metro_cut(key):
+    """A 220 km window on any metro the map names, built on demand.
+
+    The five hand-written cuts were five entries in REGIONS.  Eighty-one of
+    them would be eighty-one entries saying the same thing, so a cut for a
+    metro is derived from the metro itself: its name gives the slug, its
+    label point gives the centre, and everything else is what the other
+    metropolitan cuts already use.
+    """
+    for name, x, y in _metros(MIN_METRO):
+        if slug(name) != key:
+            continue
+        lon, lat = pyproj.Transformer.from_crs(
+            ALBERS, 4326, always_xy=True).transform(x, y)
+        return _cut(1, 3072, f"What land is worth around {name}",
+                    f"a 220 km square around {name}", (lon, lat, 220))
+    return None
+
 
 # Stops of a continuous scale in log price per km2; the ends are set per cut
 # from the tiles themselves, because a metro spans a hundredfold and the
@@ -310,9 +335,10 @@ PROVENANCE = {
 
 def main(argv):
     key = argv[1] if len(argv) > 1 else "us"
-    if key not in REGIONS:
-        raise SystemExit(f"usage: make_us_cartogram.py [{'|'.join(REGIONS)}]")
-    r = REGIONS[key]
+    r = REGIONS.get(key) or metro_cut(key)
+    if r is None:
+        sys.exit(f"no cut called {key!r}; try one of "
+                 + ", ".join(sorted(REGIONS)) + ", or any metro's slug")
 
     value, geo, real = tile_values(r["block"], r["window"], r["src"],
                                    private=r["diverge"])
@@ -731,8 +757,6 @@ def _metros(floor):
     "Urban Honolulu".  The label is then the place's own name, which is why the
     map says Louisville rather than Louisville/Jefferson County.
     """
-    import re
-
     def norm(s):
         return re.sub(r"[^a-z]", "", s.lower().replace("saint", "st"))
 
@@ -799,6 +823,61 @@ def _metros(floor):
     return out
 
 
+GAZ = IN / "gaz" / "2023_Gaz_place_national.txt"
+# Below this a place is a hamlet, and on a 220 km window there are thousands
+# of them.  The reveal rule decides which are actually drawn at a given zoom;
+# this only decides which are candidates.
+PLACE_MIN = 4_000
+
+
+def _places(geo):
+    """Every incorporated place and CDP in the window, biggest first.
+
+    The metro cuts named only the metro areas themselves, which on a
+    metropolitan window is six or eight labels for a whole conurbation: New
+    York, Bridgeport, Trenton and little else across 220 km that holds several
+    hundred towns.  Natural Earth cannot help -- it is a global gazetteer and
+    carries ten places in that window.
+
+    The Census does: its gazetteer names 32,000 places and the ACS counts
+    them, and both are already fetched for other purposes.  Population is what
+    orders them, so the reveal rule spends its budget on the places a reader
+    is most likely to be looking for.
+    """
+    if not GAZ.exists():
+        print("  no place gazetteer; metro cuts will name only their metros")
+        return []
+    g = pd.read_csv(GAZ, sep="\t", dtype=str)
+    g.columns = [c.strip() for c in g.columns]
+    lat = pd.to_numeric(g.INTPTLAT, errors="coerce")
+    lon = pd.to_numeric(g.INTPTLONG, errors="coerce")
+    d = pd.read_csv(IN / "acs" / "acsdt5y2023-b01003.dat", sep="|",
+                    dtype={"GEO_ID": str}, low_memory=False)
+    d = d[d.GEO_ID.str.startswith("1600000US")]
+    pop = pd.Series(pd.to_numeric(d["B01003_E001"], errors="coerce").values,
+                    index=d.GEO_ID.str[9:])
+    g["pop"] = g.GEOID.map(pop)
+    ok = lat.notna() & lon.notna() & (g["pop"] >= PLACE_MIN)
+    g, lat, lon = g[ok], lat[ok], lon[ok]
+    x, y = pyproj.Transformer.from_crs(4326, ALBERS, always_xy=True).transform(
+        lon.to_numpy(), lat.to_numpy())
+    x0, y1 = geo["x0"], geo["y1"]
+    x1 = x0 + geo["tx"] * geo["side"]
+    y0 = y1 - geo["ty"] * geo["side"]
+    m = (x >= x0) & (x <= x1) & (y >= y0) & (y <= y1)
+    out = pd.DataFrame({"name": g.NAME.to_numpy()[m], "x": x[m], "y": y[m],
+                        "pop": g["pop"].to_numpy()[m]})
+    # "Boston city", "Cambridge city", "Newton city" -- the gazetteer's legal
+    # suffix is not what anyone calls the place.
+    out["name"] = out.name.str.replace(
+        r"\s+(city|town|village|borough|CDP|municipality|"
+        r"city and borough|consolidated government|"
+        r"metropolitan government|urban county government)$", "",
+        regex=True).str.strip()
+    return list(out.sort_values("pop", ascending=False)
+                .itertuples(index=False, name=None))
+
+
 def cities(geo, n):
     """Place names, carried through the flow like everything else.
 
@@ -822,6 +901,15 @@ def cities(geo, n):
     print(f"  {len(out)} metro areas"
           + (f" over {floor:,.0f} people" if floor else "")
           + " in this cut, named at their largest city")
+    if geo["window"] is not None:
+        # The metros come first so they keep the ranks that get them drawn at
+        # the widest zoom; the towns fill in behind them as the reader goes in.
+        seen = {t[0] for t in out}
+        towns = [(nm, x, y) for nm, x, y, _ in _places(geo) if nm not in seen]
+        take = towns[:max(0, n - len(out))]
+        out = out + take
+        print(f"  and {len(take):,d} of {len(towns):,d} towns over "
+              f"{PLACE_MIN:,d} people, revealed as the zoom makes room")
     return ([t[0] for t in out],
             np.array([[t[1], t[2]] for t in out], dtype=float).reshape(-1, 2))
 
@@ -1401,8 +1489,16 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
     # the country can reach New York in one click, and get back the same way;
     # the file names are what GitHub Pages serves, so they are literal here.
     SITE = "https://chesweinfeld.github.io/american-land"
-    CUTS = [("nyc", "New York"), ("la", "Los Angeles"),
-            ("chi", "Chicago"), ("bay", "San Francisco"), ("mia", "Miami")]
+    # Where a searched metro has a cut of its own, the page says so and the
+    # search goes there rather than zooming the national tiles, which are
+    # 3.84 km and cannot show what a 480 m cut shows.
+    hascut = cut_slugs()
+    # The row under the map carries the five largest; the rest are reached by
+    # searching, which is what the box is for.
+    CUTS = [(hascut[n], n) for n in
+            ("New York", "Los Angeles", "Chicago", "San Francisco", "Miami")
+            if n in hascut]
+    prefix = "figures/" if key == "us" else ""
     nav = ""
     if key == "us":
         nav = ('<span class="sp"></span>'
@@ -1439,6 +1535,8 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
 
     html = _HTML.format(
         head=head, nav=nav,
+        hascut=json.dumps({k: prefix + f"land_value_cartogram_{v}.html"
+                           for k, v in hascut.items()}),
         W=f"{W:.0f}", H=f"{H:.0f}", maxk=f"{MAX_ZOOM:.0f}",
         title=_esc(r["title"]), where=_esc(r["where"]),
         provenance=PROVENANCE["ratio" if r["diverge"] else r["src"]],
@@ -1572,6 +1670,7 @@ try {{
 }} catch(e) {{}}
 const D={data};
 const BORDERS={borders}, METROS={metros}, WATERS={waters}, MBOX={mbox};
+const HASCUT={hascut};
 const LABELS={labels}, TOWNS={towns};
 
 // The geometry travels deflated; the browser's own decompressor unpacks it,
@@ -2248,7 +2347,7 @@ function showHits() {{
   hits.innerHTML=hitList.map((t,i)=>
     `<li role="option" data-i="${{i}}" aria-selected="${{i===0}}">`+
     `${{t[0].replace(/[&<>]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;'}})[c])}}`+
-    `</li>`).join('');
+    (HASCUT[t[0]] ? '<i>480 m cut</i>' : '') + `</li>`).join('');
   hitAt=0;
   hits.hidden=false; fbox.setAttribute('aria-expanded','true');
   placeHits();
@@ -2256,7 +2355,16 @@ function showHits() {{
 function pick(i) {{
   const t=hitList[i];
   if(!t) return;
-  fbox.value=t[0]; closeHits(); fbox.blur(); goTo(t);
+  fbox.value=t[0]; closeHits(); fbox.blur();
+  // A metro with a cut of its own gets it.  Zooming the national tiles to a
+  // metro shows 3.84 km squares magnified; the cut is drawn at the source's
+  // own 480 m, which is a different picture and the one worth going to.
+  const href=HASCUT[t[0]];
+  if(href && !location.pathname.endsWith(href.split('/').pop())) {{
+    location.href=href;
+    return;
+  }}
+  goTo(t);
 }}
 fbox.addEventListener('input',showHits);
 fbox.addEventListener('focus',showHits);
