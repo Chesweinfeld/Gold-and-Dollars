@@ -41,6 +41,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import time
 import zlib
 from pathlib import Path
 
@@ -186,11 +187,13 @@ build."""
 # run at 480 m, which is where "parcel level" stops being a figure of speech --
 # a 480 m tile in Manhattan is about two city blocks.
 def _cut(block, nx, title, where, window, src="land", mesh=None,
-         diverge=False, flat=False, title_note=None, clip=None):
+         diverge=False, flat=False, title_note=None, clip=None, city=None,
+         citypt=None):
     land = src == "land"
     return dict(
         block=block, nx=nx, title=title, where=where, window=window, src=src,
-        mesh=mesh, diverge=diverge, flat=flat, clip=clip,
+        mesh=mesh, diverge=diverge, flat=flat, clip=clip, city=city,
+        citypt=citypt,
         # Relaxation helps the land field and hurts the output field.  Land
         # prices vary smoothly; output does not -- it stands in point masses at
         # the blocks where the jobs are, and feeding a map full of collapsed
@@ -298,7 +301,7 @@ def metro_cut(key):
                 (x0 + x1) / 2, (y0 + y1) / 2)
         return _cut(1, 3072, f"What land is worth around {name}",
                     f"the {name} metropolitan area, as the Census draws it",
-                    (lon, lat, km), clip=shape)
+                    (lon, lat, km), clip=shape, city=name, citypt=(x, y))
     return None
 
 
@@ -350,6 +353,15 @@ _SRC_GDP = ("Output: BEA county GDP for 2023 (CAGDP2) on twenty industry "
 _SRC_NAMES = (f"Cities: Census metropolitan areas over {MIN_METRO:,.0f} "
               "people (ACS 2023), at their largest place.")
 
+_SRC_LIMITS = ('City limits: Census incorporated places, 2023 cartographic '
+               'boundaries at 1:500,000 &mdash; census designated places are '
+               'not drawn, because they have no government and so no '
+               'boundary.')
+_SRC_HOODS = ('Neighbourhoods: OpenStreetMap contributors, '
+              '<a href="https://www.openstreetmap.org/copyright">ODbL</a>. '
+              'No official dataset of American neighbourhoods exists; these '
+              'are the names people who live there have written down.')
+
 PROVENANCE = {
     "land": _SRC_LAND + " " + _SRC_NAMES,
     "ratio": (_SRC_LAND + " " + _SRC_GDP + " Parks and military land are "
@@ -382,12 +394,24 @@ def main(argv):
     city_name, city_xy = cities(geo, 420)
     mshapes = metro_bounds(geo, MIN_METRO if geo["window"] is None else 0.0,
                            r["flat"], geo["tx"] * geo["side"] / r["nx"])
-    # Water only on the metropolitan cuts.  The national cut would need a file
-    # per county for three thousand counties to draw rivers a pixel wide.
+    # Water, city limits and neighbourhood names only on the metropolitan
+    # cuts.  The national cut would need a file per county for three thousand
+    # counties to draw rivers a pixel wide, and at 3.84 km a tile is bigger
+    # than most of the places these layers describe.
     wshapes = (water_bounds(geo, r["flat"], geo["tx"] * geo["side"] / r["nx"])
                if geo["window"] is not None else None)
-    pts, bidx, midx, widx, lab0 = pack_points(
-        lattice, geo, borders, city_xy, metros=mshapes, water=wshapes)
+    pshapes = (muni_bounds(geo, r["flat"], geo["tx"] * geo["side"] / r["nx"])
+               if geo["window"] is not None else None)
+    hoods = (_hoods(geo, r["city"], r["citypt"], value)[:HOODS_MAX]
+             if r["city"] and geo["clip"] is not None else [])
+    n_town = len(city_name)
+    names = city_name + [h[0] for h in hoods]
+    anchors = np.vstack([np.asarray(city_xy, dtype=float).reshape(-1, 2),
+                         np.array([[h[1], h[2]] for h in hoods],
+                                  dtype=float).reshape(-1, 2)])
+    pts, bidx, midx, widx, pidx, lab0 = pack_points(
+        lattice, geo, borders, anchors, metros=mshapes, water=wshapes,
+        munis=pshapes)
     if r["flat"]:
         print(f"\n{len(pts):,d} vertices, undeformed "
               f"({len(lattice):,d} lattice + {len(pts)-len(lattice):,d} "
@@ -403,8 +427,8 @@ def main(argv):
                          value.ravel()[tiles]))
 
     render(key, r, value, geo, tiles, quads, moved, len(lattice),
-           bidx, postal, city_name, lab0, real.ravel()[tiles], midx=midx,
-           widx=widx,
+           bidx, postal, names, lab0, real.ravel()[tiles], midx=midx,
+           widx=widx, pidx=pidx, n_town=n_town,
            mgeo=(mshapes.GEOID.tolist() if mshapes is not None else []))
     return 0
 
@@ -668,7 +692,8 @@ def build_mesh(value):
     return lattice, tiles, quads
 
 
-def pack_points(lattice, geo, borders, anchors, metros=None, water=None):
+def pack_points(lattice, geo, borders, anchors, metros=None, water=None,
+                munis=None):
     """Lattice corners, border rings and label anchors in one array.
 
     They all ride the same flow, so the state outlines and their names still
@@ -697,9 +722,10 @@ def pack_points(lattice, geo, borders, anchors, metros=None, water=None):
     idx = rings(borders.geometry)
     midx = rings(metros.geometry) if metros is not None else []
     widx = rings(water.geometry) if water is not None else []
+    pidx = rings(munis.geometry) if munis is not None else []
     lab0 = n
-    chunks.append(np.asarray(anchors, dtype=float))
-    return np.vstack([xy] + chunks), idx, midx, widx, lab0
+    chunks.append(np.asarray(anchors, dtype=float).reshape(-1, 2))
+    return np.vstack([xy] + chunks), idx, midx, widx, pidx, lab0
 
 
 WATER = IN / "water"
@@ -775,6 +801,56 @@ def water_bounds(geo, flat, cell):
     return g
 
 
+PLACES = IN / "cb_2023_us_place_500k.zip"
+# A ring smaller than this on a metro cut is a village of a few streets, and
+# at the zoom where it would be legible the reader is already inside it.
+MUNI_MIN_KM2 = 0.5
+
+
+def _muni():
+    """Every incorporated place in the country, once, cached.
+
+    LSAD 57 is a census designated place -- a name the Census gives to a
+    settlement that has no government.  A CDP is drawn on plenty of maps and
+    it is a real place, but it is not a municipal boundary, and a layer called
+    city limits that included them would be claiming a line exists where none
+    does.  So they are dropped, and the layer is thinner in the parts of the
+    country that are genuinely unincorporated.
+    """
+    g = _MUNI_CACHE.get("all")
+    if g is None:
+        g = gpd.read_file(f"zip://{PLACES}").to_crs(ALBERS)
+        g = g[g.LSAD != "57"].reset_index(drop=True)
+        _MUNI_CACHE["all"] = g
+    return g
+
+
+def muni_bounds(geo, flat, cell):
+    """City limits inside the cut, ridden through the same flow as everything.
+
+    Same two tolerances as the state and metro outlines, and for the same
+    reason: these rings ride the flow, so on a cartogram they cannot carry
+    detail finer than the flow grid.
+    """
+    box = _clipbox(geo)
+    g = _muni().copy()
+    g = g[g.intersects(box)]
+    g["geometry"] = g.geometry.intersection(box)
+    g = g[~g.geometry.is_empty & (g.geometry.area > MUNI_MIN_KM2 * 1e6)]
+    g = g.sort_values("ALAND", ascending=False).reset_index(drop=True)
+    tol = max(geo["tx"] * geo["side"] / DRAW_W / MAX_ZOOM, 5.0)
+    if not flat and cell:
+        tol = max(tol, cell / 2.0)
+    g["geometry"] = [q.simplify(tol).buffer(0) for q in g.geometry]
+    if not flat:
+        g["geometry"] = [densify(q, max(geo["side"], 2000.0))
+                         for q in g.geometry]
+    g = g[~g.geometry.is_empty].reset_index(drop=True)
+    print(f"  {len(g):,d} incorporated places with a boundary to draw")
+    return g
+
+
+_MUNI_CACHE = {}
 _METRO_CACHE = {}
 
 
@@ -947,6 +1023,117 @@ def _places(geo):
         regex=True).str.strip()
     return list(out.sort_values("pop", ascending=False)
                 .itertuples(index=False, name=None))
+
+
+OSM = IN / "osm"
+# Overpass is free and therefore rationed: it runs a couple of slots per
+# address and resets the connection rather than queueing.  Asking twenty
+# cities in a row, or seven builds at once, gets most of them refused -- which
+# on a first run would quietly leave those cuts with no neighbourhood names at
+# all.  So: three public mirrors, and a wait between tries that grows.
+OVERPASS = ("https://overpass-api.de/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter")
+
+
+def _overpass(query, path, tries=4):
+    """Run one Overpass query into `path`, or leave it absent and say so."""
+    for i in range(tries):
+        url = OVERPASS[i % len(OVERPASS)]
+        r = subprocess.run(["curl", "-sS", "-m", "240", "--get", url,
+                            "--data-urlencode", f"data={query}",
+                            "-o", str(path)],
+                           capture_output=True, text=True)
+        if not r.returncode and path.exists() and path.stat().st_size > 200:
+            try:
+                if json.loads(path.read_text()).get("elements"):
+                    return True
+            except ValueError:
+                pass
+        path.unlink(missing_ok=True)
+        if i < tries - 1:
+            time.sleep(10 * (i + 1))
+    return False
+
+
+def _hoods(geo, city, citypt, value):
+    """The neighbourhoods of the metro's own city, dearest ground first.
+
+    There is no national dataset of American neighbourhoods.  The Census does
+    not delineate them -- a neighbourhood has no government, no boundary and
+    no count -- and the cities that publish their own do it in fifty different
+    formats.  OpenStreetMap is the one place they are all written down in one
+    schema: `place=neighbourhood`, `suburb` or `quarter`, contributed by
+    people who live there.  It is not authoritative and it is not even, but on
+    this map it does not have to be: a neighbourhood name is a landmark for
+    the reader, not a measurement.  It is fetched once per city and cached,
+    and the ODbL asks for attribution, which the page gives.
+
+    Only the metro's own principal city, because that is where the tiles are
+    small enough for the names to have anywhere to go.
+
+    Order decides which names the reveal rule spends its budget on, and there
+    is no population to rank them by.  So they are ranked by the thing the map
+    is about: the land value of the tile each one stands on, dearest first.
+    On a cartogram that is also the most useful order, because the dearest
+    ground is the ground that has swollen and has room for a name.
+    """
+    g = _muni()
+    inside = g[g.intersects(geo["clip"])]
+    hit = inside[inside.NAME == city]
+    if not len(hit):
+        # The map's name for a city comes from Natural Earth and the boundary
+        # from the Census, and the two do not always agree: Natural Earth says
+        # "Washington, D.C." where the Census says "Washington".  Rather than
+        # keep a list of the ones that differ, fall back to the place the
+        # metro's own label point stands in, which is the city by
+        # construction.
+        hit = inside[shapely.contains_xy(inside.geometry,
+                                         citypt[0], citypt[1])]
+        if len(hit):
+            print(f"  {city} is {hit.iloc[0].NAME!r} to the Census; "
+                  "matched on the label point instead of the name")
+    if not len(hit):
+        print(f"  no incorporated place called {city!r} in this metro, "
+              "so no neighbourhoods")
+        return []
+    town = hit.sort_values("ALAND", ascending=False).iloc[0]
+    OSM.mkdir(parents=True, exist_ok=True)
+    f = OSM / f"hoods_{town.GEOID}.json"
+    if not f.exists():
+        x0, y0, x1, y1 = town.geometry.bounds
+        t = pyproj.Transformer.from_crs(ALBERS, 4326, always_xy=True)
+        w, s_, e, nth = (*t.transform(x0, y0), *t.transform(x1, y1))
+        q = ('[out:json][timeout:90];node["place"~"^(neighbourhood|suburb|'
+             f'quarter)$"]({s_:.5f},{w:.5f},{nth:.5f},{e:.5f});out body;')
+        print(f"  fetching neighbourhoods for {city} from OpenStreetMap ...")
+        if not _overpass(q, f):
+            print("  every Overpass mirror refused; this cut gets no "
+                  "neighbourhood names")
+            return []
+    try:
+        el = json.loads(f.read_text())["elements"]
+    except (ValueError, KeyError):
+        f.unlink(missing_ok=True)
+        print("  the cached Overpass reply is not usable; skipping")
+        return []
+    nm = [(e["tags"]["name"], e["lon"], e["lat"]) for e in el
+          if e.get("tags", {}).get("name")]
+    if not nm:
+        return []
+    x, y = pyproj.Transformer.from_crs(4326, ALBERS, always_xy=True).transform(
+        np.array([e[1] for e in nm]), np.array([e[2] for e in nm]))
+    keep = shapely.contains_xy(town.geometry, x, y) & _inside(geo, x, y)
+    x, y = x[keep], y[keep]
+    names = [n for n, k in zip([e[0] for e in nm], keep) if k]
+    # The tile each name stands on, and what that tile is worth.
+    ix = np.clip(((x - geo["x0"]) / geo["side"]).astype(int), 0, geo["tx"] - 1)
+    iy = np.clip(((geo["y1"] - y) / geo["side"]).astype(int), 0, geo["ty"] - 1)
+    v = value[iy, ix]
+    order = np.argsort(-v)
+    print(f"  {len(names):,d} neighbourhoods of {city} from OpenStreetMap, "
+          "ranked by what the ground under each is worth")
+    return [(names[i], float(x[i]), float(y[i])) for i in order]
 
 
 def cities(geo, n):
@@ -1152,7 +1339,8 @@ def _named_boxes(mbox, mgeo):
 
 
 def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
-           lab0, real, tile_value, areas, midx=(), widx=(), mgeo=()):
+           lab0, real, tile_value, areas, midx=(), widx=(), mgeo=(),
+           pidx=(), n_town=None):
     """Everything both pages need: the drawing box, the colours, the payload.
 
     The document figure and the scrolled story draw the same tiles with the
@@ -1300,18 +1488,32 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
             continue
         waters.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
                       + "Z")
+    munis = []
+    for _, start, n in pidx:
+        ring = to_px(moved[start:start + n])
+        if len(ring) < 4:
+            continue
+        munis.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
+                     + "Z")
     cp = to_px(moved[lab0:])
+    if n_town is None:
+        n_town = len(cp)
+    tp, hp = cp[:n_town], cp[n_town:]
+    tname, hname = city_name[:n_town], city_name[n_town:]
     codes, lp = _drawn_anchors(big, postal)
     return dict(W=W, H=H, base=base, span=span, lo=lo, hi=hi, draw=draw,
                 payload=payload, borders=borders, metros=metros,
-                waters=waters, mbox=_named_boxes(mbox, mgeo),
+                waters=waters, munis=munis, mbox=_named_boxes(mbox, mgeo),
+                hoods=[[q, round(float(x), 1), round(float(y), 1), k]
+                       for (q, (x, y)), k in zip(zip(hname, hp),
+                                                 _hood_zoom(hp))],
                 density=density,
                 labels=[[q, round(float(x), 1), round(float(y), 1), k]
                         for (q, (x, y)), k in zip(zip(codes, lp),
                                                   _state_zoom(lp))],
                 towns=[[q, round(float(x), 1), round(float(y), 1), k]
-                       for (q, (x, y)), k in zip(zip(city_name, cp),
-                                                 _town_zoom(cp))],
+                       for (q, (x, y)), k in zip(zip(tname, tp),
+                                                 _town_zoom(tp))],
                 bx=(bx0, by0, bx1, by1), to_px=to_px,
                 still=(still_px, still_quads, still_u))
 
@@ -1416,6 +1618,36 @@ def _town_zoom(cp):
     return out
 
 
+# How many neighbourhood names stand at full extent -- none: a neighbourhood
+# is not a landmark at the scale of a whole metropolitan area, and at that zoom
+# the towns are still coming in.  The floor is what holds them back; the same
+# rank-and-separation rule then brings them in behind it.
+HOODS_AT_FULL = 3
+HOOD_CLEAR = 34.0
+HOOD_FLOOR = 2.5
+HOODS_MAX = 400
+
+
+def _hood_zoom(hp):
+    """The zoom at which each neighbourhood name appears.
+
+    The same two terms as _town_zoom -- rank, and clearance from the names
+    already on the page -- with a floor under both, because a neighbourhood
+    should never be the first thing a reader sees.  It is a name for ground
+    they have already zoomed into.
+    """
+    out = []
+    for i, q in enumerate(hp):
+        by_rank = np.sqrt((i + 1) / HOODS_AT_FULL)
+        if i == 0:
+            out.append(round(float(max(by_rank, HOOD_FLOOR)), 3))
+            continue
+        d = float(np.min(np.hypot(*(hp[:i] - q).T)))
+        by_room = HOOD_CLEAR / max(d, 1e-6)
+        out.append(round(float(max(by_rank, by_room, HOOD_FLOOR)), 3))
+    return out
+
+
 def still(path, px, quads, u, W, H):
     """A flat picture of the same tiles, for a link preview.
 
@@ -1500,7 +1732,8 @@ def still(path, px, quads, u, W, H):
 
 
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
-           postal, city_name, lab0, real, midx=(), widx=(), mgeo=()):
+           postal, city_name, lab0, real, midx=(), widx=(), mgeo=(),
+           pidx=(), n_town=None):
     FIG.mkdir(parents=True, exist_ok=True)
     tile_value = value.ravel()[tiles]
     areas = _areas(moved, quads)
@@ -1531,7 +1764,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
 
     s = _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal,
                city_name, lab0, real, tile_value, areas, midx=midx,
-               widx=widx, mgeo=mgeo)
+               widx=widx, mgeo=mgeo, pidx=pidx, n_town=n_town)
     W, H = s["W"], s["H"]
     base, span, lo, hi = s["base"], s["span"], s["lo"], s["hi"]
     draw, payload, borders = s["draw"], s["payload"], s["borders"]
@@ -1607,7 +1840,9 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
                            for k, v in hascut.items()}),
         W=f"{W:.0f}", H=f"{H:.0f}", maxk=f"{MAX_ZOOM:.0f}",
         title=_esc(r["title"]), where=_esc(r["where"]),
-        provenance=PROVENANCE["ratio" if r["diverge"] else r["src"]],
+        provenance=(PROVENANCE["ratio" if r["diverge"] else r["src"]]
+                    + (" " + _SRC_LIMITS if s["munis"] else "")
+                    + (" " + _SRC_HOODS if s["hoods"] else "")),
         lede=(f"Every square is the same {side:.2f} km of real ground, drawn "
               f"where it actually is. The colour is one number: what the land "
               f"in that square is worth, divided by the output produced on it "
@@ -1626,6 +1861,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         n=len(draw),
         km2=f"{side*side:.6f}",
         metros=json.dumps(s["metros"]), waters=json.dumps(s["waters"]),
+        munis=json.dumps(s["munis"]), hoods=json.dumps(s["hoods"]),
         mbox=json.dumps(s["mbox"]),
         data=json.dumps(payload), base=f"{base:.6f}" if r["diverge"] else "1",
         borders=json.dumps(borders),
@@ -1738,6 +1974,7 @@ try {{
 }} catch(e) {{}}
 const D={data};
 const BORDERS={borders}, METROS={metros}, WATERS={waters}, MBOX={mbox};
+const MUNIS={munis}, HOODS={hoods};
 const HASCUT={hascut};
 const LABELS={labels}, TOWNS={towns};
 
@@ -1774,6 +2011,10 @@ document.getElementById('bd').innerHTML =
 const _wt=document.getElementById('wt');
 if(_wt) _wt.innerHTML =
   WATERS.map(d=>`<path class="wr" d="${{d}}"/>`).join('');
+const _pb=document.getElementById('pb');
+if(_pb) _pb.innerHTML =
+  MUNIS.map(d=>`<path class="prc" d="${{d}}"/>`).join('')
+  + MUNIS.map(d=>`<path class="pr" d="${{d}}"/>`).join('');
 const _mb=document.getElementById('mb');
 // Casing first, then the dashes, so every ring is legible wherever it crosses
 // a dark tile -- two passes rather than one path each, to keep all the casing
@@ -1788,6 +2029,10 @@ document.getElementById('lb').innerHTML =
 // _town_zoom() from where the flow actually put it.  Deriving it here from the
 // rank alone could not see the drawn positions, so it had no way to know that
 // two names were on top of each other.
+document.getElementById('nh').innerHTML =
+  HOODS.map(l=>`<g class="tg" data-k="${{l[3]}}">`+
+    `<text class="nn" x="${{l[1]}}" y="${{l[2]}}">${{l[0]}}</text></g>`)
+    .join('');
 document.getElementById('tw').innerHTML =
   TOWNS.map(l=>`<g class="tg" data-k="${{l[3]}}">`+
     `<circle class="td" cx="${{l[1]}}" cy="${{l[2]}}" r="2"/>`+
@@ -2033,19 +2278,19 @@ svg.ov {{ pointer-events:none; }}
 /* A switch rather than a button: a plain button that toggles a layer gives the
    reader no way to tell, before clicking, that it is a two-state control, and
    no way to tell afterwards which state it left behind. */
-#metros {{ display:flex; align-items:center; gap:8px; padding:0 14px 0 10px;
+.sw {{ display:flex; align-items:center; gap:8px; padding:0 14px 0 10px;
   color:var(--muted); }}
-#metros .tr {{ display:block; width:32px; height:18px; border-radius:9px;
+.sw .tr {{ display:block; width:32px; height:18px; border-radius:9px;
   background:var(--line); position:relative; transition:background .12s;
   flex:none; }}
-#metros .kn {{ position:absolute; top:2px; left:2px; width:14px; height:14px;
+.sw .kn {{ position:absolute; top:2px; left:2px; width:14px; height:14px;
   border-radius:50%; background:var(--bg); transition:left .12s;
   box-shadow:0 1px 2px rgba(0,0,0,.3); }}
-#metros[aria-checked="true"] {{ color:var(--ink); border-color:currentColor; }}
-#metros[aria-checked="true"] .tr {{ background:currentColor; }}
-#metros[aria-checked="true"] .kn {{ left:16px; }}
+.sw[aria-checked="true"] {{ color:var(--ink); border-color:currentColor; }}
+.sw[aria-checked="true"] .tr {{ background:currentColor; }}
+.sw[aria-checked="true"] .kn {{ left:16px; }}
 @media (prefers-reduced-motion: reduce) {{
-  #metros .tr, #metros .kn {{ transition:none; }}
+  .sw .tr, .sw .kn {{ transition:none; }}
 }}
 /* Off by default: the metro outlines answer a question the reader has to ask.
    Dashed and thinner than a state line, so that when both are on it is obvious
@@ -2053,6 +2298,18 @@ svg.ov {{ pointer-events:none; }}
    hairline dash on top of the tiles is not visible enough to read as a change. */
 #mb {{ visibility:hidden; }}
 #mb.on {{ visibility:visible; }}
+/* City limits, off for the same reason and drawn a step quieter than the
+   metro ring: there are two hundred of them on a metro cut against one or two
+   metro outlines, so at the same weight they would become the map rather than
+   a layer over it.  Solid rather than dashed, because a municipal boundary is
+   a hard line in a way a metro boundary is not -- the metro is a statistical
+   area, the city limit is where one government stops and the next begins. */
+#pb {{ visibility:hidden; }}
+#pb.on {{ visibility:visible; }}
+.prc {{ fill:none; stroke:var(--mapbg); stroke-opacity:.7; stroke-width:3.0;
+  vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
+.pr {{ fill:none; stroke:var(--mapline); stroke-opacity:.72; stroke-width:1.2;
+  vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 /* Water, on a cartogram, has been squeezed to almost nothing -- that is what
    the flow does to ground worth nothing.  Drawn as a thin dark line it is
    still legible as the East River, which is what tells Manhattan from
@@ -2065,6 +2322,15 @@ svg.ov {{ pointer-events:none; }}
 .mr {{ fill:none; stroke:var(--mapline); stroke-opacity:.9; stroke-width:1.6;
   stroke-dasharray:6 4; vector-effect:non-scaling-stroke;
   stroke-linejoin:round; }}
+/* Neighbourhood names sit under the town names in every sense: lighter, and
+   revealed later.  The opacity is the whole point -- a reader scanning for
+   Towson should not have to read past Hampden to find it, but once they are
+   inside Baltimore, Hampden is the name they want. */
+.nn {{ font:500 10.5px/1 ui-sans-serif,system-ui,-apple-system,"Segoe UI",
+  Roboto,sans-serif; fill:var(--maptownink); fill-opacity:.62;
+  paint-order:stroke; stroke:var(--maptownhalo); stroke-opacity:.55;
+  stroke-width:2.6px; stroke-linejoin:round; text-anchor:middle;
+  user-select:none; }}
 .legend {{ margin:14px 0 0; max-width:520px; }}
 .bar {{ height:11px; border-radius:3px; }}
 .ticks {{ display:flex; justify-content:space-between; font-size:11px;
@@ -2108,8 +2374,8 @@ value.</p>
 <div id="stage">
   <canvas id="cv"></canvas>
   <svg class="ov" id="ov" viewBox="0 0 {W} {H}" preserveAspectRatio="none">
-    <g id="sc"><g id="wt"></g><g id="mb"></g><g id="bd"></g><g id="lb"></g
-      ><g id="tw"></g></g>
+    <g id="sc"><g id="wt"></g><g id="pb"></g><g id="mb"></g><g id="bd"></g
+      ><g id="lb"></g><g id="nh"></g><g id="tw"></g></g>
   </svg>
   <div id="tip"></div>
   <div id="hud">1.0x</div>
@@ -2123,8 +2389,12 @@ value.</p>
       aria-expanded="false" aria-autocomplete="list" aria-controls="hits"
     ><ul id="hits" role="listbox" hidden></ul></span>
   <button id="reset" type="button">reset view</button>
-  <button id="metros" type="button" role="switch" aria-checked="false"
+  <button id="metros" class="sw" type="button" role="switch"
+    aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>metro areas</button>
+  <button id="limits" class="sw" type="button" role="switch"
+    aria-checked="false"
+    ><span class="tr"><span class="kn"></span></span>city limits</button>
   <button id="theme" type="button" title="light, dark, or whatever this
     machine is set to">theme: system</button>
   {nav}
@@ -2171,6 +2441,9 @@ function draw() {{
     t.style.display = kEff0 >= +t.dataset.k ? '' : 'none';
   for(const t of document.querySelectorAll('.tn')) {{
     t.style.fontSize=(12*fit*s)+'px'; t.style.strokeWidth=(3.5*fit*s)+'px';
+  }}
+  for(const t of document.querySelectorAll('.nn')) {{
+    t.style.fontSize=(10.5*fit*s)+'px'; t.style.strokeWidth=(2.6*fit*s)+'px';
   }}
   for(const c of document.querySelectorAll('.td'))
     c.setAttribute('r', 2*fit*s);
@@ -2458,12 +2731,19 @@ document.addEventListener('click',e=>{{
   if(!e.target.closest('.find')) closeHits();
 }});
 
-const mbtn=document.getElementById('metros'), mlayer=document.getElementById('mb');
-if(!METROS.length) mbtn.style.display='none';
-mbtn.addEventListener('click',()=>{{
-  const on=mlayer.classList.toggle('on');
-  mbtn.setAttribute('aria-checked',on?'true':'false');
-}});
+// One behaviour, two switches: a layer that starts hidden, a button that
+// says which state it is in.  A control that is not backed by any geometry on
+// this cut is removed rather than left to do nothing when pressed.
+function layerSwitch(btn, layer, has) {{
+  const b=document.getElementById(btn), g=document.getElementById(layer);
+  if(!b) return;
+  if(!has) {{ b.style.display='none'; return; }}
+  b.addEventListener('click',()=>{{
+    b.setAttribute('aria-checked', g.classList.toggle('on')?'true':'false');
+  }});
+}}
+layerSwitch('metros','mb',METROS.length);
+layerSwitch('limits','pb',MUNIS.length);
 </script>
 """
 

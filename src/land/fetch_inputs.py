@@ -181,7 +181,8 @@ def main():
     # Census cartographic boundaries at 1:500k carry five times the detail and
     # are clipped to the shoreline, which is what makes the coasts read.
     for name, what in (("state", "state outlines, 1:500,000"),
-                       ("county", "county outlines, for allocation")):
+                       ("county", "county outlines, for allocation"),
+                       ("place", "city limits, for the metro cuts")):
         tiger = OUT / f"cb_2023_us_{name}_500k.zip"
         if not tiger.exists():
             curl(f"https://www2.census.gov/geo/tiger/GENZ2023/shp/{tiger.name}",
