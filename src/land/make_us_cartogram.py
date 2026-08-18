@@ -1336,7 +1336,45 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
     money = (f"${tot/1e12:,.2f} trillion" if tot >= 1e12
              else f"${tot/1e9:,.0f} billion")
     side = geo["side"] / 1000.0
+    # The three published cuts link to each other.  A reader who arrives at
+    # the country can reach New York in one click, and get back the same way;
+    # the file names are what GitHub Pages serves, so they are literal here.
+    SITE = "https://chesweinfeld.github.io/american-land"
+    LINKS = {"us": [("figures/land_value_cartogram_nyc.html", "New York"),
+                    ("figures/land_value_cartogram_bay.html",
+                     "San Francisco")],
+             "nyc": [("../index.html", "the whole country"),
+                     ("land_value_cartogram_bay.html", "San Francisco")],
+             "bay": [("../index.html", "the whole country"),
+                     ("land_value_cartogram_nyc.html", "New York")]}
+    nav = ""
+    if key in LINKS:
+        nav = ('<span class="sp"></span>'
+               + "".join(f'<a href="{href}">{name} &rarr;</a>'
+                         for href, name in LINKS[key]))
+    # Only the country is the page anyone links to, so only it carries the
+    # card.  The metro cuts would unfurl with a picture of the whole map,
+    # which would be a lie about what is behind the link.
+    head = ""
+    if key == "us":
+        head = (
+            '<meta name="description" content="Every square is the same 3.84 '
+            'km of real ground, sized by its share of the $11.26 trillion of '
+            'American land value.">\n'
+            '<meta property="og:type" content="website">\n'
+            f'<meta property="og:title" content="{_esc(r["title"])}">\n'
+            '<meta property="og:description" content="A cartogram of the '
+            'lower 48 drawn at price rather than at area. Every square is the '
+            'same 3.84 km of real ground; its size on the page is its share '
+            'of the $11.26 trillion the land is worth.">\n'
+            f'<meta property="og:image" content="{SITE}/figures/'
+            'preview_land_value_us.png">\n'
+            '<meta property="og:image:width" content="1200">\n'
+            '<meta property="og:image:height" content="630">\n'
+            '<meta name="twitter:card" content="summary_large_image">')
+
     html = _HTML.format(
+        head=head, nav=nav,
         W=f"{W:.0f}", H=f"{H:.0f}", maxk=f"{MAX_ZOOM:.0f}",
         title=_esc(r["title"]), where=_esc(r["where"]),
         provenance=PROVENANCE["ratio" if r["diverge"] else r["src"]],
@@ -1584,6 +1622,12 @@ _HTML = """<!doctype html>
 <meta charset="utf-8">
 <title>{title}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- The map keeps its own ground and ink in either theme, and this tells the
+     browser so.  Chrome's automatic dark mode leaves a page alone once it
+     declares a colour scheme; without it, it inverts the lot, and an inverted
+     cartogram is white metro rings and white labels on dark ground. -->
+<meta name="color-scheme" content="light dark">
+{head}
 <style>
 :root {{
   color-scheme: light dark;
@@ -1645,8 +1689,16 @@ svg.ov {{ pointer-events:none; }}
   border:1px solid var(--line); border-radius:8px;
   background:var(--bg); color:var(--ink); cursor:pointer;
   touch-action:manipulation; user-select:none; -webkit-user-select:none; }}
-.ctl button:focus-visible {{ outline:2px solid currentColor;
-  outline-offset:2px; }}
+.ctl button:focus-visible, .ctl a:focus-visible {{
+  outline:2px solid currentColor; outline-offset:2px; }}
+/* The cuts link to each other, so a reader who lands on the country can get
+   to New York without going back to an index first. */
+.ctl a {{ font:inherit; font-size:13px; min-height:38px; padding:0 14px;
+  display:inline-flex; align-items:center; border:1px solid var(--line);
+  border-radius:8px; background:var(--bg); color:var(--ink);
+  text-decoration:none; touch-action:manipulation; }}
+.ctl a:hover {{ border-color:currentColor; }}
+.ctl .sp {{ flex:1 1 auto; }}
 /* A switch rather than a button: a plain button that toggles a layer gives the
    reader no way to tell, before clicking, that it is a two-state control, and
    no way to tell afterwards which state it left behind. */
@@ -1737,6 +1789,7 @@ value.</p>
   <button id="reset" type="button">reset view</button>
   <button id="metros" type="button" role="switch" aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>metro areas</button>
+  {nav}
 </div>
 <div class="legend">{legend}</div>
 <p class="notes"><b>What the colour says.</b> {colour}<br><br>

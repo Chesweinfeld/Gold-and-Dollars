@@ -2,6 +2,19 @@
 <meta charset="utf-8">
 <title>What American land is worth</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- The map keeps its own ground and ink in either theme, and this tells the
+     browser so.  Chrome's automatic dark mode leaves a page alone once it
+     declares a colour scheme; without it, it inverts the lot, and an inverted
+     cartogram is white metro rings and white labels on dark ground. -->
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Every square is the same 3.84 km of real ground, sized by its share of the $11.26 trillion of American land value.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="What American land is worth">
+<meta property="og:description" content="A cartogram of the lower 48 drawn at price rather than at area. Every square is the same 3.84 km of real ground; its size on the page is its share of the $11.26 trillion the land is worth.">
+<meta property="og:image" content="https://chesweinfeld.github.io/american-land/figures/preview_land_value_us.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <style>
 :root {
   color-scheme: light dark;
@@ -63,8 +76,16 @@ svg.ov { pointer-events:none; }
   border:1px solid var(--line); border-radius:8px;
   background:var(--bg); color:var(--ink); cursor:pointer;
   touch-action:manipulation; user-select:none; -webkit-user-select:none; }
-.ctl button:focus-visible { outline:2px solid currentColor;
-  outline-offset:2px; }
+.ctl button:focus-visible, .ctl a:focus-visible {
+  outline:2px solid currentColor; outline-offset:2px; }
+/* The cuts link to each other, so a reader who lands on the country can get
+   to New York without going back to an index first. */
+.ctl a { font:inherit; font-size:13px; min-height:38px; padding:0 14px;
+  display:inline-flex; align-items:center; border:1px solid var(--line);
+  border-radius:8px; background:var(--bg); color:var(--ink);
+  text-decoration:none; touch-action:manipulation; }
+.ctl a:hover { border-color:currentColor; }
+.ctl .sp { flex:1 1 auto; }
 /* A switch rather than a button: a plain button that toggles a layer gives the
    reader no way to tell, before clicking, that it is a two-state control, and
    no way to tell afterwards which state it left behind. */
@@ -155,6 +176,7 @@ value.</p>
   <button id="reset" type="button">reset view</button>
   <button id="metros" type="button" role="switch" aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>metro areas</button>
+  <span class="sp"></span><a href="figures/land_value_cartogram_nyc.html">New York &rarr;</a><a href="figures/land_value_cartogram_bay.html">San Francisco &rarr;</a>
 </div>
 <div class="legend"><div class="bar" style="background:linear-gradient(90deg,#cde2fb 0%, #9ec5f4 17%, #6da7ec 33%, #3987e5 50%, #256abf 67%, #184f95 83%, #0d366b 100%)"></div><div class="ticks"><span>$222k</span><span>$2m</span><span>$14m</span><span>$112m</span><span>$897m</span></div><div class="cap">land value per km&sup2; of real ground</div></div>
 <p class="notes"><b>What the colour says.</b> The shade is land value per square kilometre of real ground.<br><br>
