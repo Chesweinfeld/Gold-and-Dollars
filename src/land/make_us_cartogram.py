@@ -818,22 +818,37 @@ MUNI_MIN_KM2 = 0.5
 SAME_SHAPE = 0.01          # symmetric difference, as a share of the area
 
 
-def _active(gdf, gaz):
+# FUNCSTAT says what a unit is for.  `S` is a statistical area that only looks
+# like a government -- every census designated place, and the survey townships
+# of the thirty states where a township governs nothing.  `I` is a government
+# that has gone inactive.  Those two are what a boundary layer must not draw.
+NOT_A_GOVERNMENT = {"S", "I"}
+
+
+def _active(gdf, gaz, keep=None):
     """Keep the units that are governments, by the Census's own flag.
 
-    FUNCSTAT is the field that says whether a unit actually governs: `A` for
-    an active government, `S` for a statistical area that only looks like one.
-    Everything else here could have been guessed from the name and would have
-    been guessed wrong.  A census designated place is named like a town and
-    has no government.  Iowa, Arkansas and North Carolina have thousands of
-    "townships" that are lines on a survey, while the identically named
-    townships of Pennsylvania and Michigan are governments with a budget.  The
-    twenty states where county subdivisions govern are not written down here;
-    they fall out of the flag.
+    For county subdivisions the test is `A`, an active government, and that
+    alone: it is what separates the towns of New England and the townships of
+    Pennsylvania, which have budgets, from the identically named townships of
+    Iowa and North Carolina, which are lines on a survey.  The twenty states
+    where subdivisions govern are not written down anywhere here; they fall
+    out of the flag.
+
+    For places `A` is too strict, and quietly so.  Washington is `N`, because
+    its government is filed against the District rather than against the city,
+    and Indianapolis, Nashville, Athens and Butte-Silver Bow are `F`, the
+    "(balance)" records that consolidated city-counties leave behind.  All of
+    them are cities with real limits.  Testing for `A` dropped them, and since
+    this same table is what a metro cut searches to find its own principal
+    city, Washington's cut came out with no neighbourhood names at all.  So a
+    place is kept unless the flag says it is statistical or inactive, which
+    still admits not one census designated place.
     """
     f = pd.read_csv(gaz, sep="\t", dtype=str)
     f.columns = [c.strip() for c in f.columns]
-    ok = set(f.GEOID[f.FUNCSTAT == "A"])
+    ok = set(f.GEOID[f.FUNCSTAT.isin(keep) if keep
+                     else ~f.FUNCSTAT.isin(NOT_A_GOVERNMENT)])
     return gdf[gdf.GEOID.isin(ok)]
 
 
@@ -860,7 +875,8 @@ def _muni():
         pl = _active(gpd.read_file(f"zip://{PLACES}").to_crs(ALBERS),
                      GAZDIR / "2023_Gaz_place_national.txt")[cols]
         cs = _active(gpd.read_file(f"zip://{COUSUBS}").to_crs(ALBERS),
-                     GAZDIR / "2023_Gaz_cousubs_national.txt")[cols]
+                     GAZDIR / "2023_Gaz_cousubs_national.txt",
+                     keep={"A"})[cols]
         # Places first, so that where a place and a subdivision are the same
         # ground it is the place that survives the dedupe below.
         g = pd.concat([pl.assign(kind="place"), cs.assign(kind="cousub")],
@@ -901,29 +917,37 @@ def muni_bounds(geo, flat, cell):
 
 
 def _distinct(g):
-    """Drop a boundary that is another boundary already in the frame.
+    """Drop a boundary that is a boundary already in the frame.
 
-    A municipality can be a place and a county subdivision at once -- every
-    one in New Jersey is, with the same outline under both names -- and two
-    identical rings are one line drawn twice, at twice the vertices.  So a
-    subdivision goes only if some place is the same ground: symmetric
-    difference under a hundredth of the area.  Not name matching, which would
-    keep Boston's town beside Boston's city on a technicality and drop a
-    Springfield that happened to share a name with a township in the next
-    county.
+    A municipality can arrive twice.  Every one in New Jersey is both a place
+    and a county subdivision with the same outline, and a consolidated
+    city-county can be both a city and the "(balance)" record left over from
+    consolidating it.  Two identical rings are one line drawn twice, at twice
+    the vertices.
+
+    The test is the ground, not the name: symmetric difference under a
+    hundredth of the area.  Name matching would keep Boston's town beside
+    Boston's city on a technicality, and would drop a Springfield that
+    happened to share a name with a township in the next county.  Rows arrive
+    with places first and larger first, so what survives a pair is the place,
+    and the bigger of two places.
     """
-    keep = np.ones(len(g), dtype=bool)
-    places = g[g.kind == "place"]
-    if not len(places) or not (g.kind == "cousub").any():
+    n = len(g)
+    keep = np.ones(n, dtype=bool)
+    if n < 2:
         return keep
-    tree = shapely.STRtree(places.geometry.values)
-    for i in np.nonzero((g.kind == "cousub").to_numpy())[0]:
-        q = g.geometry.iloc[i]
-        a = q.area
-        for j in tree.query(q):
-            o = places.geometry.iloc[j]
+    geom = g.geometry.values
+    tree = shapely.STRtree(geom)
+    for i in range(n):
+        if not keep[i]:
+            continue
+        a = geom[i].area
+        for j in tree.query(geom[i]):
+            if j >= i or not keep[j]:
+                continue                      # only against what already won
+            o = geom[j]
             if abs(o.area - a) < SAME_SHAPE * a and \
-                    q.symmetric_difference(o).area < SAME_SHAPE * a:
+                    geom[i].symmetric_difference(o).area < SAME_SHAPE * a:
                 keep[i] = False
                 break
     return keep

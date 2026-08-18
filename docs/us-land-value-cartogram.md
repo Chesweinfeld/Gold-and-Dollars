@@ -160,6 +160,110 @@ unweighted distribution spends most of its range on tiles too small to see, and
 the visible map comes out one flat colour. The first version of the New York
 figure did exactly that.
 
+## What is drawn over the tiles
+
+Everything above the tiles rides the same flow they do, so a boundary lands
+where the cartogram put the ground it encloses rather than where it sits on an
+undeformed map. On a metro cut there are five such layers.
+
+**State lines and water.** Water only on the metro cuts — the national map
+would need a TIGER file per county for three thousand counties to draw rivers
+a pixel wide. On a cartogram worthless ground is squeezed to almost nothing,
+so the Hudson is a thin dark line, which is exactly what tells Manhattan from
+Jersey City.
+
+**Metro outlines**, behind a switch, dashed.
+
+**City limits**, behind a second switch — and this one is not one kind of
+object. In most of the country a municipality is an *incorporated place*, with
+unincorporated county in between. In twenty states it is also, or instead, a
+*county subdivision*: the towns of New England and New York, the townships of
+New Jersey, Pennsylvania and the Midwest, which are general-purpose
+governments covering every acre with no gaps. Drawing only places gave Nassau
+County its villages and left out Hempstead, Oyster Bay, Islip, Babylon and
+Brookhaven, which are towns and therefore not places at all.
+
+Which units count is not a judgement made here. The Census records a
+`FUNCSTAT` against every unit, and the layer reads it:
+
+| flag | meaning | drawn |
+| --- | --- | --- |
+| `A` | active government | yes |
+| `N`, `F`, `B` | a real government filed oddly — Washington, and the "(balance)" of a consolidated city-county | places only |
+| `S` | statistical only — every CDP, and the survey townships of thirty states | no |
+| `I` | inactive | no |
+
+For subdivisions the test is `A` alone, and it reproduces the twenty
+strong-MCD states from the data rather than from a list written here: it keeps
+Pennsylvania's and Michigan's townships, which have budgets, and discards the
+three thousand identically named townships of Iowa, Arkansas and North
+Carolina, which are lines on a survey. For places `A` is too strict, and
+quietly so — Washington is `N` because its government is filed against the
+District, Indianapolis and Nashville are `F` — so a place is kept unless the
+flag says statistical or inactive. That still admits not one CDP.
+
+A boundary can then arrive twice: every New Jersey municipality is both a
+place and a subdivision with one outline. A dedupe drops the duplicate on
+geometry — symmetric difference under a hundredth of the area — and not on
+name, which would keep Boston's town beside Boston's city and drop a
+Springfield that shares a name with a township one county over.
+
+**Neighbourhood names**, for the metro's own principal city, at a lighter
+weight and never below 2.5×. There is no national dataset of American
+neighbourhoods: the Census does not delineate them, and the cities that
+publish their own do it in fifty formats. OpenStreetMap has them in one schema
+nationwide, contributed by the people who live there. It is neither
+authoritative nor evenly covered, and the page says so and carries the ODbL
+attribution — for a landmark that is a fair source, for a number it would not
+be. There being no population to rank them by, they are ranked by the thing
+the map is about: the land value of the tile each name stands on, dearest
+first, which on a cartogram is also where a name has room.
+
+The coverage is uneven in ways worth stating. Baltimore has 248 names against
+18 city limits, because Baltimore County contains no incorporated place at
+all. Miami has 11, because the city proper is small and Coral Gables, Hialeah
+and Kendall are other municipalities — the rule that is right for New York
+leaves that one cut thin.
+
+### When a name appears
+
+Room on a page is an area, so the count that fits grows with the square of the
+zoom and the i-th name's turn comes at `sqrt(i / 60)`. Rank alone is not
+enough, though: a name is unreadable with another name sitting on it, however
+high its rank, so each also waits until it has come clear of the names around
+it. That test is run on the *drawn* positions, after the flow — a cartogram
+pulls Oakland away from San Francisco, so on that map the two separate earlier
+than on a flat one, and the rule follows the map instead of second-guessing
+it.
+
+The test is the drawn box. It used to be a 40-unit circle around the anchor,
+which is the wrong shape for a word: "South Farmingdale" is two hundred units
+wide and fourteen tall, so a circle that cleared its height cleared a fifth of
+its width, and on Long Island the names ran into each other. Two boxes come
+apart once the zoom has separated them on *either* axis, so what a pair needs
+is the cheaper of the two separations.
+
+Two things about that are easy to get wrong, and both were, and neither was
+visible from reading the code:
+
+- **Which pairs need testing.** A pair is on the page together at every zoom
+  above the *later* of the two, so what must hold is that the later one is not
+  below what the pair needs. Asking instead whether a neighbour is on the page
+  *yet* skips every neighbour that appears later — which is how North Merrick
+  came out at 1.95 against North Bellmore's 2.00 and the two were drawn on top
+  of each other from 2.0 up.
+- **That a gap is two things.** The ground between two anchors is map and
+  grows with the zoom; the offset that lifts a name above its dot is drawn at
+  a constant size on screen and so *shrinks*. Adding them makes separation a
+  straight line in zoom when it is really a V — two names can be apart,
+  converge, and collide again further in. That is SoHo under New York from
+  4.9× up.
+
+Counting overlapping rectangles on the New York cut at sixteen zooms from 1×
+to 300×: no overlapping pair at any of them, against nine at 3× before. It
+costs nothing — 719 names still stand at full zoom, the same as before. The
+rule delays a name; it does not drop it.
+
 ## What this cannot tell you
 
 - The values are **model predictions, not transactions**.
