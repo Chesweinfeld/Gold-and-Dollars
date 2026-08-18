@@ -226,6 +226,16 @@ REGIONS = {
                 "a 220 km square around New York", (-74.0, 40.75, 220)),
     "bay": _cut(1, 3072, "What land is worth around San Francisco",
                 "a 220 km square around San Francisco", (-122.3, 37.8, 220)),
+    # The centres are the downtowns, and the box is wide enough to hold the
+    # built-up area rather than the administrative city: Los Angeles reaches
+    # to Riverside, Chicago across the state line into Indiana, Miami down the
+    # coast to Homestead and out to the edge of the Everglades.
+    "la": _cut(1, 3072, "What land is worth around Los Angeles",
+               "a 220 km square around Los Angeles", (-118.1, 34.0, 220)),
+    "chi": _cut(1, 3072, "What land is worth around Chicago",
+                "a 220 km square around Chicago", (-87.7, 41.85, 220)),
+    "mia": _cut(1, 3072, "What land is worth around Miami",
+                "a 220 km square around Miami", (-80.4, 26.0, 220)),
     "usgdp": _cut(8, 4608, "American output, drawn where it is produced",
                   "the contiguous United States", None, "gdp"),
     # Same geometry as `us` -- area is still land value -- but coloured by how
@@ -247,13 +257,27 @@ REGIONS = {
 # country spans a millionfold.
 RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
         "#256abf", "#184f95", "#0d366b"]
+# The same scale for a dark ground, and it has to run the other way.  On white,
+# dear land is the darkest blue because dark is what stands out; on black that
+# would bury it, so dear land is the brightest.  The low end sits just above
+# the ground rather than on it, so that cheap land still reads as land and not
+# as a hole in the map.
+RAMP_DARK = ["#16222f", "#1b3b58", "#1f5685", "#2374b5",
+             "#3f97d8", "#79bef0", "#c2e2ff"]
 
 # Diverging, for the one map that has a sign.  Brown-to-teal is colour-blind
 # safe and the midpoint is a true neutral rather than a near-white, so it holds
 # up on a dark ground as well as a light one.
 DIVERGE = ["#01665e", "#35978f", "#80cdc1", "#9a9a9a",
            "#dfc27d", "#bf812d", "#8c510a"]
+# The diverging scale needs less doing to it: both ends are already mid-toned,
+# which is what makes it work on either ground.  Only the neutral middle moves,
+# because a mid grey that reads as "neither" on white reads as "something" on
+# black.
+DIVERGE_DARK = ["#2ec4b6", "#41a89f", "#5c8f89", "#5e6570",
+                "#9d8757", "#c08a34", "#e0932a"]
 NOVAL = "#7d838c"      # land whose output is known only by county
+NOVAL_DARK = "#4a5058"
 
 _SRC_LAND = ('Land value: Nolte, <a href="https://doi.org/10.1073/pnas.2012'
              '865117">&ldquo;High-resolution land value maps&hellip;&rdquo;'
@@ -1340,18 +1364,21 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
     # the country can reach New York in one click, and get back the same way;
     # the file names are what GitHub Pages serves, so they are literal here.
     SITE = "https://chesweinfeld.github.io/american-land"
-    LINKS = {"us": [("figures/land_value_cartogram_nyc.html", "New York"),
-                    ("figures/land_value_cartogram_bay.html",
-                     "San Francisco")],
-             "nyc": [("../index.html", "the whole country"),
-                     ("land_value_cartogram_bay.html", "San Francisco")],
-             "bay": [("../index.html", "the whole country"),
-                     ("land_value_cartogram_nyc.html", "New York")]}
+    CUTS = [("nyc", "New York"), ("la", "Los Angeles"),
+            ("chi", "Chicago"), ("bay", "San Francisco"), ("mia", "Miami")]
     nav = ""
-    if key in LINKS:
+    if key == "us":
         nav = ('<span class="sp"></span>'
-               + "".join(f'<a href="{href}">{name} &rarr;</a>'
-                         for href, name in LINKS[key]))
+               + "".join(f'<a href="figures/land_value_cartogram_{k}.html">'
+                         f'{name} &rarr;</a>' for k, name in CUTS))
+    elif key in dict(CUTS):
+        # A metro cut offers the country and its peers, itself excepted: the
+        # row is how a reader moves between them without going back first.
+        nav = ('<span class="sp"></span>'
+               '<a href="../index.html">the whole country &rarr;</a>'
+               + "".join(f'<a href="land_value_cartogram_{k}.html">'
+                         f'{name} &rarr;</a>'
+                         for k, name in CUTS if k != key))
     # Only the country is the page anyone links to, so only it carries the
     # card.  The metro cuts would unfurl with a picture of the whole map,
     # which would be a lie about what is behind the link.
@@ -1400,7 +1427,9 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         borders=json.dumps(borders),
         labels=json.dumps(s["labels"]), towns=json.dumps(s["towns"]),
         ramp=json.dumps(DIVERGE if r["diverge"] else RAMP),
+        rampdark=json.dumps(DIVERGE_DARK if r["diverge"] else RAMP_DARK),
         noval=json.dumps(NOVAL if r["diverge"] else None),
+        novaldark=json.dumps(NOVAL_DARK if r["diverge"] else None),
         legend=(_legend_diverge(span, base) if r["diverge"]
                 else _legend(lo, hi, r["caption"])),
         noun=_esc(r["noun"]), colour=r["colour"], notes=r["notes"],
@@ -1435,7 +1464,8 @@ def _legend(lo, hi, caption):
     ticks = "".join(
         f'<span>{_money(10 ** (lo + (hi - lo) * f))}</span>'
         for f in (0, 0.25, 0.5, 0.75, 1))
-    return (f'<div class="bar" style="background:linear-gradient(90deg,{stops})">'
+    return (f'<div class="bar" id="bar" '
+            f'style="background:linear-gradient(90deg,{stops})">'
             f'</div><div class="ticks">{ticks}</div>'
             f'<div class="cap">{caption}</div>')
 
@@ -1482,7 +1512,26 @@ def _money(x):
 
 
 _GL_JS = """const W={W}, H={H}, NT={n}, KM2={km2}, BASE={base}, MAXK={maxk};
-const RAMP={ramp}, NOVAL={noval};
+const RAMP_LIGHT={ramp}, RAMP_DARK={rampdark};
+const NOVAL_LIGHT={noval}, NOVAL_DARK={novaldark};
+// Which scale is in force is a function of the theme, and the theme can
+// change under the reader's feet -- they flip a switch, or the system does it
+// at sunset -- so nothing here may bake it in.
+const mq = matchMedia('(prefers-color-scheme: dark)');
+function darkNow() {{
+  const t = document.documentElement.dataset.theme;
+  return t ? t === 'dark' : mq.matches;
+}}
+function RAMP() {{ return darkNow() ? RAMP_DARK : RAMP_LIGHT; }}
+function NOVAL() {{ return darkNow() ? NOVAL_DARK : NOVAL_LIGHT; }}
+// Applied here rather than with the rest of the theme wiring at the foot of
+// the file, because the tiles are coloured on load: read the preference late
+// and the map is built from the wrong scale and has to be repainted, which
+// the reader sees as a flash of the other theme.
+try {{
+  const _t = localStorage.getItem('theme');
+  if(_t && _t !== 'system') document.documentElement.dataset.theme = _t;
+}} catch(e) {{}}
 const D={data};
 const BORDERS={borders}, METROS={metros}, WATERS={waters};
 const LABELS={labels}, TOWNS={towns};
@@ -1498,6 +1547,14 @@ async function unz(b64) {{
   return new Uint8Array(buf);
 }}
 
+let repaint=()=>{{}};
+function paintLegend() {{
+  const bar=document.getElementById('bar');
+  if(!bar) return;
+  const r=RAMP();
+  bar.style.background='linear-gradient(90deg,'
+    + r.map((c,i)=>c+' '+(i/(r.length-1)*100).toFixed(0)+'%').join(',') + ')';
+}}
 const cv=document.getElementById('cv'), stage=document.getElementById('stage');
 // ?shot keeps the drawing buffer around so a headless browser can
 // screenshot the canvas; without it the capture races the compositor and
@@ -1574,17 +1631,25 @@ let TVAL=null, TU=null, TGDP=null;
   const idc=new Uint8Array(NT*12), idx=new Uint32Array(NT*6);
   // 256 shades interpolated between the ramp's stops, so the scale is
   // continuous rather than a staircase.
-  const stops=RAMP.map(h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),
-                           parseInt(h.slice(5,7),16)]);
-  const rgb=new Array(256);
-  const top=NOVAL?254:255;
-  for(let i=0;i<=top;i++) {{
-    const f=i/top*(stops.length-1), a=Math.min(Math.floor(f),stops.length-2);
-    const g=f-a;
-    rgb[i]=[0,1,2].map(j=>Math.round(stops[a][j]+(stops[a+1][j]-stops[a][j])*g));
+  function lut() {{
+    const ramp=RAMP(), nov=NOVAL();
+    const stops=ramp.map(h=>[parseInt(h.slice(1,3),16),
+                             parseInt(h.slice(3,5),16),
+                             parseInt(h.slice(5,7),16)]);
+    const rgb=new Array(256);
+    const top=nov?254:255;
+    for(let i=0;i<=top;i++) {{
+      const f=i/top*(stops.length-1), a=Math.min(Math.floor(f),stops.length-2);
+      const g=f-a;
+      rgb[i]=[0,1,2].map(
+        j=>Math.round(stops[a][j]+(stops[a+1][j]-stops[a][j])*g));
+    }}
+    // 255 is the sentinel for land with no workplace on it, not the top of a
+    // scale.
+    if(nov) rgb[255]=[1,3,5].map(k=>parseInt(nov.slice(k,k+2),16));
+    return rgb;
   }}
-  // 255 is the sentinel for land with no workplace on it, not the top of a scale.
-  if(NOVAL) rgb[255]=[1,3,5].map(k=>parseInt(NOVAL.slice(k,k+2),16));
+  let rgb=lut();
   for(let t=0;t<NT;t++) {{
     const c=rgb[TU[t]], id=t+1;
     const r=(id&255), g=((id>>8)&255), b=((id>>16)&255);
@@ -1607,9 +1672,27 @@ let TVAL=null, TU=null, TGDP=null;
     const l=gl.getAttribLocation(prog,loc);
     gl.enableVertexAttribArray(l);
     gl.vertexAttribPointer(l,size,type,norm,0,0);
+    return b;
   }}
   buf(pos,'a_pos',2,gl.FLOAT,false);
-  buf(col,'a_col',3,gl.UNSIGNED_BYTE,true);
+  const colBuf=buf(col,'a_col',3,gl.UNSIGNED_BYTE,true);
+  // Repainting on a theme change means rewriting one buffer, not reloading
+  // the map: the geometry and the tile indices are unchanged, only the colour
+  // each index maps to.
+  repaint=()=>{{
+    rgb=lut();
+    for(let t=0;t<NT;t++) {{
+      const c=rgb[TU[t]];
+      for(let j=0;j<4;j++) {{
+        const o=(t*4+j)*3;
+        col[o]=c[0]; col[o+1]=c[1]; col[o+2]=c[2];
+      }}
+    }}
+    gl.bindBuffer(gl.ARRAY_BUFFER,colBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER,0,col);
+    paintLegend();
+    draw();
+  }};
   buf(idc,'a_id',3,gl.UNSIGNED_BYTE,true);
   const ib=gl.createBuffer();
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
@@ -1642,10 +1725,24 @@ _HTML = """<!doctype html>
   --line:#2a323c; --panel:#171c22; }}
 :root[data-theme="light"] {{ --ink:#14171a; --muted:#5b6570; --bg:#ffffff;
   --line:#d8dee6; --panel:#f6f8fa; }}
-/* The map keeps its own ground and its own ink in both themes.  Everything
-   drawn over the tiles -- outlines, name halos, town dots -- is keyed to
-   these rather than to the page, so the figure does not invert under it. */
-:root {{ --mapbg:#ffffff; --mapink:#14171a; }}
+/* The map has a ground and an ink of its own, and both follow the theme.  An
+   earlier version pinned them to white and near-black in either mode, on the
+   reasoning that a figure should not invert under the page.  That was wrong in
+   practice: it left a white rectangle glaring out of a dark page, which is
+   exactly the thing readers install an extension to get rid of -- and those
+   extensions then invert the map into nonsense, white borders and white labels
+   over a black country.  Better to draw the dark map properly than to have one
+   made for us badly. */
+:root {{ --mapbg:#ffffff; --mapink:#14171a; --mapline:#000000;
+  --mapwater:#b9cbdb; --mapwaterline:#41617f; }}
+@media (prefers-color-scheme: dark) {{
+  :root {{ --mapbg:#0d1117; --mapink:#e8ecf1; --mapline:#ffffff;
+    --mapwater:#16222d; --mapwaterline:#6f93b3; }}
+}}
+:root[data-theme="dark"] {{ --mapbg:#0d1117; --mapink:#e8ecf1;
+  --mapline:#ffffff; --mapwater:#16222d; --mapwaterline:#6f93b3; }}
+:root[data-theme="light"] {{ --mapbg:#ffffff; --mapink:#14171a;
+  --mapline:#000000; --mapwater:#b9cbdb; --mapwaterline:#41617f; }}
 * {{ box-sizing: border-box; }}
 body {{ margin:0; background:var(--bg); color:var(--ink);
   font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }}
@@ -1663,7 +1760,7 @@ canvas, svg.ov {{ position:absolute; inset:0; width:100%; height:100%; }}
    either theme: black lines over a dimmed dark map would be invisible. */
 canvas {{ opacity:.74; }}
 svg.ov {{ pointer-events:none; }}
-.sb {{ fill:none; stroke:#000; stroke-opacity:.62; stroke-width:.9;
+.sb {{ fill:none; stroke:var(--mapline); stroke-opacity:.62; stroke-width:.9;
   vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 /* State codes are orientation, not content: they should be findable when the
    eye goes looking and invisible when it is reading the tiles.  The city names
@@ -1726,11 +1823,12 @@ svg.ov {{ pointer-events:none; }}
    the flow does to ground worth nothing.  Drawn as a thin dark line it is
    still legible as the East River, which is what tells Manhattan from
    Brooklyn.  Filled as well, for the flat map, where it keeps its width. */
-.wr {{ fill:#b9cbdb; fill-opacity:.9; stroke:#41617f; stroke-opacity:.9;
+.wr {{ fill:var(--mapwater); fill-opacity:.9; stroke:var(--mapwaterline);
+  stroke-opacity:.9;
   stroke-width:1.1; vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 .mrc {{ fill:none; stroke:var(--mapbg); stroke-opacity:.9; stroke-width:3.6;
   vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
-.mr {{ fill:none; stroke:#000; stroke-opacity:.9; stroke-width:1.6;
+.mr {{ fill:none; stroke:var(--mapline); stroke-opacity:.9; stroke-width:1.6;
   stroke-dasharray:6 4; vector-effect:non-scaling-stroke;
   stroke-linejoin:round; }}
 .legend {{ margin:14px 0 0; max-width:520px; }}
@@ -1789,6 +1887,8 @@ value.</p>
   <button id="reset" type="button">reset view</button>
   <button id="metros" type="button" role="switch" aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>metro areas</button>
+  <button id="theme" type="button" title="light, dark, or whatever this
+    machine is set to">theme: system</button>
   {nav}
 </div>
 <div class="legend">{legend}</div>
@@ -1989,6 +2089,33 @@ function clampView() {{
 document.getElementById('reset').onclick=()=>{{
   view={{k:1,ox:0,oy:0}}; draw();
 }};
+// Three states, not two: a reader who has expressed no preference should get
+// their system's, and should keep getting it when the system changes at dusk.
+// Only an explicit choice is remembered.
+const tbtn=document.getElementById('theme');
+const THEMES=['system','light','dark'];
+function showTheme() {{
+  let t='system';
+  try {{ t=localStorage.getItem('theme') || 'system'; }} catch(e) {{}}
+  if(t==='system') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme=t;
+  if(tbtn) tbtn.textContent='theme: '+t;
+  repaint();
+}}
+if(tbtn) tbtn.onclick=()=>{{
+  let t='system';
+  try {{ t=localStorage.getItem('theme') || 'system'; }} catch(e) {{}}
+  try {{
+    localStorage.setItem('theme', THEMES[(THEMES.indexOf(t)+1)%THEMES.length]);
+  }} catch(e) {{}}
+  showTheme();
+}};
+showTheme();
+// Following the system means following it as it changes, not only at load.
+mq.addEventListener('change',()=>{{
+  if(!document.documentElement.dataset.theme) repaint();
+}});
+
 const mbtn=document.getElementById('metros'), mlayer=document.getElementById('mb');
 if(!METROS.length) mbtn.style.display='none';
 mbtn.addEventListener('click',()=>{{
