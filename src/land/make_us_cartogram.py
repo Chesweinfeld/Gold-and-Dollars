@@ -410,9 +410,6 @@ def main(argv):
     # The flow grid cell: the finest scale the deformation can carry.
     borders, postal = state_borders(
         geo, flat=r["flat"], cell=geo["tx"] * geo["side"] / r["nx"])
-    # Kept fixed: the anchors ride the flow, so changing the count invalidates
-    # every cached mesh.  Which of them get drawn is decided in the browser.
-    city_name, city_xy = cities(geo, 420)
     mshapes = metro_bounds(geo, MIN_METRO if geo["window"] is None else 0.0,
                            r["flat"], geo["tx"] * geo["side"] / r["nx"])
     # Water, city limits and neighbourhood names only on the metropolitan
@@ -421,8 +418,13 @@ def main(argv):
     # than most of the places these layers describe.
     wshapes = (water_bounds(geo, r["flat"], geo["tx"] * geo["side"] / r["nx"])
                if geo["window"] is not None else None)
+    # Before the labels, because the boundaries are now what the labels are
+    # drawn from: a line around a town with no name on it is half a fact.
     pshapes = (muni_bounds(geo, r["flat"], geo["tx"] * geo["side"] / r["nx"])
                if geo["window"] is not None else None)
+    # The anchors ride the flow, so changing this count invalidates every
+    # cached mesh -- it is raised only when there is something to say.
+    city_name, city_xy = cities(geo, ANCHORS, munis=pshapes)
     hoods = (_hoods(geo, r["city"], r["citypt"], value)[:HOODS_MAX]
              if r["city"] and geo["clip"] is not None else [])
     n_town = len(city_name)
@@ -447,10 +449,39 @@ def main(argv):
              else cached(key, r, field, extent, pts, quads,
                          value.ravel()[tiles]))
 
+    # The second cartogram: area is people.
+    #
+    # Not area is price-per-resident.  A ratio is an attribute of a place, not
+    # a quantity to be summed, so there is nothing for a cartogram to encode
+    # in its area -- the same reason land_vs_output_map_us is drawn on equal
+    # ground.  What does sum is the population, and drawing that is what makes
+    # the per-resident colour mean something: a tile's area is the people on
+    # it, its colour is the land each of them stands on, and the two
+    # multiplied are the land value.  Dense cheap ground swells and empty dear
+    # ground shrinks, which is the adjustment for density stated as geometry
+    # rather than as a legend.
+    moved2 = None
+    if people is not None and not r["flat"]:
+        pv = people.ravel()[tiles]
+        live = pv > 0
+        # Ground with nobody on it cannot be drawn at nothing without tearing
+        # the sheet, so it is held at a floor and shrinks instead, exactly as
+        # the output map holds land that produces nothing.
+        floor = np.percentile(pv[live], 1) if live.any() else 1.0
+        held = np.where(live, pv, floor)
+        pop_grid = np.zeros(value.size)
+        pop_grid[tiles] = held
+        e2, f2 = solver_field(pop_grid.reshape(value.shape), geo, r["nx"])
+        print(f"\n  a second flow, on people rather than money: "
+              f"{int(live.sum()):,d} of {len(pv):,d} drawn tiles have a "
+              f"resident, the rest held at {floor:,.1f}")
+        moved2 = cached(key + "-pop", r, f2, e2, pts, quads, held)
+
     render(key, r, value, geo, tiles, quads, moved, len(lattice),
            bidx, postal, names, lab0, real.ravel()[tiles], midx=midx,
            widx=widx, pidx=pidx, n_town=n_town,
            people=(None if people is None else people.ravel()[tiles]),
+           moved2=moved2,
            mgeo=(mshapes.GEOID.tolist() if mshapes is not None else []))
     return 0
 
@@ -1309,21 +1340,111 @@ def _hoods(geo, city, citypt, value):
     return [(names[i], float(x[i]), float(y[i])) for i in order]
 
 
-def cities(geo, n):
+# How many names a cut may carry.  The anchors ride the flow, so this is not
+# free to change: raise it and every cached mesh has to be solved again.  It
+# was 420, which was enough when the names came from a gazetteer with a
+# population floor.  It is not enough now that every drawn boundary earns one
+# -- Pittsburgh alone draws 459 municipalities.
+ANCHORS = 2000
+# Two names this far apart are two places that happen to share a name, which
+# does happen inside one metro.  Closer than this they are one place named
+# twice -- a village and the township around it, or a place and the census
+# designated place laid over it.
+SAME_TOWN_KM = 20.0
+
+
+def _muni_labels(munis, geo):
+    """One name and one point for every town that has a boundary drawn.
+
+    A line around a town with no name on it is half a fact: the reader can see
+    that something ends there and cannot see what.  Pittsburgh drew 459
+    municipal boundaries and carried 73 town names, because Pennsylvania's
+    townships are county subdivisions and a place gazetteer does not list
+    them at all.
+
+    Population comes from the census-block grid rather than from a table,
+    which is the only way to have one for a township as well as a city, and
+    it is what orders the names so that the reveal rule spends its budget on
+    the ones a reader is looking for.  The point is the boundary's own
+    representative point, so a name sits inside the shape it belongs to even
+    where that shape is a crescent around a bay.
+    """
+    if munis is None or not len(munis):
+        return []
+    pop = np.load(POP_GRID, mmap_mode="r") if POP_GRID.exists() else None
+    out = []
+    for nm, q in zip(munis.NAME, munis.geometry):
+        p = q.representative_point()
+        n = 0.0
+        if pop is not None:
+            x0, y0, x1, y1 = q.bounds
+            c0 = max(int((x0 - GRID["x0"]) / GRID["res"]), 0)
+            r0 = max(int((GRID["y1"] - y1) / GRID["res"]), 0)
+            c1 = min(int((x1 - GRID["x0"]) / GRID["res"]) + 1, GRID["nx"])
+            r1 = min(int((GRID["y1"] - y0) / GRID["res"]) + 1, GRID["ny"])
+            if c1 > c0 and r1 > r0:
+                w = np.asarray(pop[r0:r1, c0:c1], dtype="float64")
+                m = rasterize([(q, 1)], out_shape=w.shape,
+                              transform=from_bounds(
+                                  GRID["x0"] + c0 * GRID["res"],
+                                  GRID["y1"] - r1 * GRID["res"],
+                                  GRID["x0"] + c1 * GRID["res"],
+                                  GRID["y1"] - r0 * GRID["res"],
+                                  c1 - c0, r1 - r0),
+                              fill=0).astype(bool)
+                n = float(w[m].sum())
+        out.append((nm, float(p.x), float(p.y), n))
+    out.sort(key=lambda t: -t[3])
+    return out
+
+
+def _one_each(items):
+    """One label per town.
+
+    Names arrive from three places -- the metro list, the boundaries, and the
+    gazetteer -- and the same town is in more than one of them.  Hempstead is
+    a New York town and a village inside it; Towson is a census designated
+    place laid over ground that has no municipality at all; a metro is named
+    at its principal city, which also has a boundary of its own.  Drawn as
+    they come, the map says Hempstead twice.
+
+    So: the first spelling of a name wins, and a later one is dropped unless
+    it is far enough away to be a different town of the same name, which
+    inside one metro is rare but real.  Items arrive largest first, so what
+    survives a pair is the bigger of the two.
+    """
+    kept, seen = [], {}
+    for it in items:
+        key = re.sub(r"[^a-z]", "", it[0].lower())
+        near = seen.get(key)
+        if near is not None and any(
+                np.hypot(it[1] - x, it[2] - y) < SAME_TOWN_KM * 1000
+                for x, y in near):
+            continue
+        seen.setdefault(key, []).append((it[1], it[2]))
+        kept.append(it)
+    return kept
+
+
+def cities(geo, n, munis=None):
     """Place names, carried through the flow like everything else.
 
     Without them a deformed map is unreadable; with them it is obvious that the
     swollen parts are the cities.
 
-    They come out in metro-population order, and the page reveals them as the
-    zoom makes room: see _label_zoom, which is what decides when each is seen.
+    Three sources, in the order the reveal rule should spend its budget:
+    the metro areas, then every town whose boundary the map draws, then the
+    gazetteer's populated places -- which adds the census designated places,
+    the Towsons and Dundalks that have no government and no city limit but
+    are what people call that ground.  Each town keeps one name; see
+    _one_each.
 
     The million-person floor is a continental rule and does not survive being
     carried onto a metropolitan window, where it left New York with one name
-    on the page and the Bay Area with three.  A metro cut is already inside a single
-    metropolitan area, so every metro in view earns its name there; what stays
-    constant across the cuts is that a name means a metro area, which is the
-    part that matters.
+    on the page and the Bay Area with three.  A metro cut is already inside a
+    single metropolitan area, so every metro in view earns its name there;
+    what stays constant across the cuts is that a name means a metro area,
+    which is the part that matters.
     """
     floor = MIN_METRO if geo["window"] is None else 0.0
     out = [t for t in _metros(floor)
@@ -1332,14 +1453,17 @@ def cities(geo, n):
           + (f" over {floor:,.0f} people" if floor else "")
           + " in this cut, named at their largest city")
     if geo["window"] is not None:
-        # The metros come first so they keep the ranks that get them drawn at
-        # the widest zoom; the towns fill in behind them as the reader goes in.
-        seen = {t[0] for t in out}
-        towns = [(nm, x, y) for nm, x, y, _ in _places(geo) if nm not in seen]
-        take = towns[:max(0, n - len(out))]
-        out = out + take
-        print(f"  and {len(take):,d} of {len(towns):,d} towns over "
-              f"{PLACE_MIN:,d} people, revealed as the zoom makes room")
+        towns = _muni_labels(munis, geo)
+        gaz = [(nm, x, y, float(pp)) for nm, x, y, pp in _places(geo)]
+        keep = _one_each([(t[0], t[1], t[2], float("inf")) for t in out]
+                         + towns + gaz)[:n]
+        add = keep[len(out):]
+        out = out + [(t[0], t[1], t[2]) for t in add]
+        drawn = sum(1 for t in add if t[3] != float("inf"))
+        print(f"  and {len(add):,d} town names: {len(towns):,d} from the "
+              f"boundaries the map draws and {len(gaz):,d} from the "
+              f"gazetteer, {len(towns) + len(gaz) - drawn:,d} of them the "
+              "same town twice")
     return ([t[0] for t in out],
             np.array([[t[1], t[2]] for t in out], dtype=float).reshape(-1, 2))
 
@@ -1513,7 +1637,7 @@ def _named_boxes(mbox, mgeo):
 
 def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
            lab0, real, tile_value, areas, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None, people=None):
+           pidx=(), n_town=None, people=None, moved2=None):
     """Everything both pages need: the drawing box, the colours, the payload.
 
     The document figure and the scrolled story draw the same tiles with the
@@ -1522,8 +1646,14 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     """
     base = span = None
     lat = moved[:n_lattice]
-    bx0, by0 = moved.min(0)
-    bx1, by1 = moved.max(0)
+    # One drawing box for both cartograms.  They are different deformations of
+    # the same tiles, and the page switches between them in place, so they
+    # have to share a viewBox or the whole map would jump when the switch is
+    # thrown.  Fitting the union costs a little margin on each and buys a
+    # switch that only moves the ground.
+    both = moved if moved2 is None else np.vstack([moved, moved2])
+    bx0, by0 = both.min(0)
+    bx1, by1 = both.max(0)
     span = max(bx1 - bx0, by1 - by0)
     pad = 0.01 * span
     bx0, by0, bx1, by1 = bx0 - pad, by0 - pad, bx1 + pad, by1 + pad
@@ -1643,6 +1773,12 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     if u2 is not None:
         blobs["u2"] = u2[draw].tobytes()
         blobs["pop"] = pop16[draw].tobytes()
+    if moved2 is not None:
+        p2 = to_px(moved2[:n_lattice])
+        blobs["vx2"] = np.clip(np.round(p2[:, 0] / W * 65535),
+                               0, 65535).astype("<u2").tobytes()
+        blobs["vy2"] = np.clip(np.round(p2[:, 1] / H * 65535),
+                               0, 65535).astype("<u2").tobytes()
     if r["diverge"]:
         g2 = np.clip(np.round((np.log10(np.maximum(gdp, 1.0)) - 3) * 4096),
                      0, 65535).astype("<u2")
@@ -1652,89 +1788,103 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     # so that still() can draw the identical picture without a browser.
     still_px, still_quads, still_u = px, quads[draw], u[draw]
 
-    borders, big = [], {}
-    for i, start, n in bidx:
-        ring = to_px(moved[start:start + n])
-        if len(ring) < 4:
-            continue
-        # Keep each state's largest drawn ring, to hang its name on below.
-        a = 0.5 * abs(float(np.dot(ring[:, 0], np.roll(ring[:, 1], -1))
-                            - np.dot(ring[:, 1], np.roll(ring[:, 0], -1))))
-        if i not in big or a > big[i][0]:
-            big[i] = (a, ring)
-        # Three decimals, not one.  The path is drawn inside an SVG scaled by
-        # the zoom, so a coordinate rounded to a tenth of a pixel at full
-        # extent is rounded to forty pixels at 400x: the outline came apart
-        # into visible steps exactly where the extra vertices above are meant
-        # to be showing detail.  Three decimals put that quantisation at 0.4 px
-        # at the deepest zoom, which is below what the screen can resolve.
-        borders.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
-                       + "Z")
-    metros, mbox = [], {}
-    for i, start, n in midx:
-        ring = to_px(moved[start:start + n])
-        if len(ring) < 4:
-            continue
-        metros.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
-                      + "Z")
-        # The extent of the metro as the flow left it, so that searching for
-        # one can frame the whole thing rather than drop a pin in the middle
-        # of it at some arbitrary zoom.  A cartogram is exactly the case where
-        # the reader cannot guess how big a place has become.
-        # Named apart from the colour scale's lo/hi, which live in this same
-        # function and which an earlier version of these two lines quietly
-        # overwrote with a pair of coordinates.
-        rlo, rhi = ring.min(0), ring.max(0)
-        prev = mbox.get(i)
-        mbox[i] = ([rlo[0], rlo[1], rhi[0], rhi[1]] if prev is None else
-                   [min(prev[0], rlo[0]), min(prev[1], rlo[1]),
-                    max(prev[2], rhi[0]), max(prev[3], rhi[1])])
-    waters = []
-    for _, start, n in widx:
-        ring = to_px(moved[start:start + n])
-        if len(ring) < 4:
-            continue
-        waters.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
-                      + "Z")
-    munis = []
-    for _, start, n in pidx:
-        ring = to_px(moved[start:start + n])
-        if len(ring) < 4:
-            continue
-        munis.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
-                     + "Z")
-    cp = to_px(moved[lab0:])
+    # The same tiles deformed two ways, so everything drawn over them has to
+    # be placed twice: a boundary, a name and a metro's extent all belong to
+    # the mesh they were carried by.  One function, called once per mesh,
+    # rather than two copies that can drift apart.
+    def place(mv):
+        borders, big = [], {}
+        for i, start, n in bidx:
+            ring = to_px(mv[start:start + n])
+            if len(ring) < 4:
+                continue
+            # Keep each state's largest drawn ring, to hang its name on below.
+            a = 0.5 * abs(float(np.dot(ring[:, 0], np.roll(ring[:, 1], -1))
+                                - np.dot(ring[:, 1], np.roll(ring[:, 0], -1))))
+            if i not in big or a > big[i][0]:
+                big[i] = (a, ring)
+            # Three decimals, not one.  The path is drawn inside an SVG scaled by
+            # the zoom, so a coordinate rounded to a tenth of a pixel at full
+            # extent is rounded to forty pixels at 400x: the outline came apart
+            # into visible steps exactly where the extra vertices above are meant
+            # to be showing detail.  Three decimals put that quantisation at 0.4 px
+            # at the deepest zoom, which is below what the screen can resolve.
+            borders.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
+                           + "Z")
+        metros, mbox = [], {}
+        for i, start, n in midx:
+            ring = to_px(mv[start:start + n])
+            if len(ring) < 4:
+                continue
+            metros.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
+                          + "Z")
+            # The extent of the metro as the flow left it, so that searching for
+            # one can frame the whole thing rather than drop a pin in the middle
+            # of it at some arbitrary zoom.  A cartogram is exactly the case where
+            # the reader cannot guess how big a place has become.
+            # Named apart from the colour scale's lo/hi, which live in this same
+            # function and which an earlier version of these two lines quietly
+            # overwrote with a pair of coordinates.
+            rlo, rhi = ring.min(0), ring.max(0)
+            prev = mbox.get(i)
+            mbox[i] = ([rlo[0], rlo[1], rhi[0], rhi[1]] if prev is None else
+                       [min(prev[0], rlo[0]), min(prev[1], rlo[1]),
+                        max(prev[2], rhi[0]), max(prev[3], rhi[1])])
+        waters = []
+        for _, start, n in widx:
+            ring = to_px(mv[start:start + n])
+            if len(ring) < 4:
+                continue
+            waters.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
+                          + "Z")
+        munis = []
+        for _, start, n in pidx:
+            ring = to_px(mv[start:start + n])
+            if len(ring) < 4:
+                continue
+            munis.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
+                         + "Z")
+        codes, lp = _drawn_anchors(big, postal)
+        cp = to_px(mv[lab0:])
+        tp, hp = cp[:n_town], cp[n_town:]
+        tname, hname = city_name[:n_town], city_name[n_town:]
+        townk = _label_zoom(tp, tname, TOWNS_AT_FULL)
+        # Neighbourhoods are tested against the town names as well as each
+        # other: a neighbourhood under a town name is exactly the collision
+        # the reader notices, because the two are the same kind of thing at
+        # different sizes.
+        hoodk = _label_zoom(hp, hname, HOODS_AT_FULL, floor=HOOD_FLOOR,
+                            font=HOOD_FONT, dy=0.0,
+                            fixed=_placed(tp, tname, townk))
+        hid = sum(1 for k in townk + hoodk if k > MAX_ZOOM)
+        if hid:
+            print(f"  {hid:,d} of {len(townk) + len(hoodk):,d} names have no "
+                  "clear space at any zoom this map reaches, and are not "
+                  "drawn")
+        return dict(
+            borders=borders, metros=metros, waters=waters, munis=munis,
+            mbox=_named_boxes(mbox, mgeo),
+            labels=[[q, round(float(x), 1), round(float(y), 1), k]
+                    for (q, (x, y)), k in zip(zip(codes, lp),
+                                              _state_zoom(lp))],
+            towns=[[q, round(float(x), 1), round(float(y), 1), k]
+                   for (q, (x, y)), k in zip(zip(tname, tp), townk)
+                   if k <= MAX_ZOOM],
+            hoods=[[q, round(float(x), 1), round(float(y), 1), k]
+                   for (q, (x, y)), k in zip(zip(hname, hp), hoodk)
+                   if k <= MAX_ZOOM])
+
     if n_town is None:
-        n_town = len(cp)
-    tp, hp = cp[:n_town], cp[n_town:]
-    tname, hname = city_name[:n_town], city_name[n_town:]
-    townk = _label_zoom(tp, tname, TOWNS_AT_FULL)
-    # Neighbourhoods are tested against the town names as well as each other:
-    # a neighbourhood under a town name is exactly the collision the reader
-    # notices, because the two are the same kind of thing at different sizes.
-    hoodk = _label_zoom(hp, hname, HOODS_AT_FULL, floor=HOOD_FLOOR,
-                        font=HOOD_FONT, dy=0.0,
-                        fixed=_placed(tp, tname, townk))
-    hid = sum(1 for k in townk + hoodk if k > MAX_ZOOM)
-    if hid:
-        print(f"  {hid:,d} of {len(townk) + len(hoodk):,d} names have no "
-              "clear space at any zoom this map reaches, and are not drawn")
-    codes, lp = _drawn_anchors(big, postal)
+        n_town = len(moved) - lab0
+    A = place(moved)
+    B = place(moved2) if moved2 is not None else None
     return dict(W=W, H=H, base=base, span=span, lo=lo, hi=hi, draw=draw,
-                lo2=lo2, hi2=hi2, hasper=u2 is not None,
-                payload=payload, borders=borders, metros=metros,
-                waters=waters, munis=munis, mbox=_named_boxes(mbox, mgeo),
-                hoods=[[q, round(float(x), 1), round(float(y), 1), k]
-                       for (q, (x, y)), k in zip(zip(hname, hp), hoodk)
-                       if k <= MAX_ZOOM],
-                density=density,
-                labels=[[q, round(float(x), 1), round(float(y), 1), k]
-                        for (q, (x, y)), k in zip(zip(codes, lp),
-                                                  _state_zoom(lp))],
-                towns=[[q, round(float(x), 1), round(float(y), 1), k]
-                       for (q, (x, y)), k in zip(zip(tname, tp), townk)
-                       if k <= MAX_ZOOM],
-                bx=(bx0, by0, bx1, by1), to_px=to_px,
+                lo2=lo2, hi2=hi2, hasper=u2 is not None, payload=payload,
+                density=density, bx=(bx0, by0, bx1, by1), to_px=to_px,
+                two=B is not None, A=A, B=B,
+                borders=A["borders"], metros=A["metros"], waters=A["waters"],
+                munis=A["munis"], mbox=A["mbox"], labels=A["labels"],
+                towns=A["towns"], hoods=A["hoods"],
                 still=(still_px, still_quads, still_u))
 
 
@@ -2019,7 +2169,7 @@ def still(path, px, quads, u, W, H):
 
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
            postal, city_name, lab0, real, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None, people=None):
+           pidx=(), n_town=None, people=None, moved2=None):
     FIG.mkdir(parents=True, exist_ok=True)
     tile_value = value.ravel()[tiles]
     areas = _areas(moved, quads)
@@ -2051,7 +2201,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
     s = _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal,
                city_name, lab0, real, tile_value, areas, midx=midx,
                widx=widx, mgeo=mgeo, pidx=pidx, n_town=n_town,
-               people=people)
+               people=people, moved2=moved2)
     W, H = s["W"], s["H"]
     base, span, lo, hi = s["base"], s["span"], s["lo"], s["hi"]
     draw, payload, borders = s["draw"], s["payload"], s["borders"]
@@ -2151,6 +2301,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         metros=json.dumps(s["metros"]), waters=json.dumps(s["waters"]),
         munis=json.dumps(s["munis"]), hoods=json.dumps(s["hoods"]),
         mbox=json.dumps(s["mbox"]),
+        alt=json.dumps(s["B"]),
         data=json.dumps(payload), base=f"{base:.6f}" if r["diverge"] else "1",
         borders=json.dumps(borders),
         labels=json.dumps(s["labels"]), towns=json.dumps(s["towns"]),
@@ -2278,6 +2429,9 @@ try {{
 const D={data};
 const BORDERS={borders}, METROS={metros}, WATERS={waters}, MBOX={mbox};
 const MUNIS={munis}, HOODS={hoods}, HASPER={perhead};
+// The same tiles under a second flow, where area is people rather than money.
+// Null on a cut that has no population layer.
+const ALT={alt};
 // 0 = land value per square kilometre, 1 = land value per resident.  The two
 // share every vertex; only the byte that indexes the ramp differs.
 let MODE=0;
@@ -2295,7 +2449,7 @@ async function unz(b64) {{
   return new Uint8Array(buf);
 }}
 
-let repaint=()=>{{}};
+let repaint=()=>{{}}, reflow=()=>{{}};
 function paintLegend() {{
   const r=RAMP();
   const g='linear-gradient(90deg,'
@@ -2314,38 +2468,47 @@ const gl=cv.getContext('webgl2',{{antialias:true,alpha:true,
 const ov=document.getElementById('ov'), sc=document.getElementById('sc');
 const tip=document.getElementById('tip'), hud=document.getElementById('hud');
 
-document.getElementById('bd').innerHTML =
-  BORDERS.map(d=>`<path class="sb" d="${{d}}"/>`).join('');
-const _wt=document.getElementById('wt');
-if(_wt) _wt.innerHTML =
-  WATERS.map(d=>`<path class="wr" d="${{d}}"/>`).join('');
-const _pb=document.getElementById('pb');
-if(_pb) _pb.innerHTML =
-  MUNIS.map(d=>`<path class="prc" d="${{d}}"/>`).join('')
-  + MUNIS.map(d=>`<path class="pr" d="${{d}}"/>`).join('');
-const _mb=document.getElementById('mb');
-// Casing first, then the dashes, so every ring is legible wherever it crosses
-// a dark tile -- two passes rather than one path each, to keep all the casing
-// underneath all the dashes where rings touch.
-if(_mb) _mb.innerHTML =
-  METROS.map(d=>`<path class="mrc" d="${{d}}"/>`).join('')
-  + METROS.map(d=>`<path class="mr" d="${{d}}"/>`).join('');
-document.getElementById('lb').innerHTML =
-  LABELS.map(l=>`<text class="sl" data-k="${{l[3]}}" x="${{l[1]}}" `+
-    `y="${{l[2]}}">${{l[0]}}</text>`).join('');
-// Each place carries the zoom at which it appears, worked out in
-// _label_zoom() from where the flow actually put it.  Deriving it here from
-// the rank alone could not see the drawn positions, so it had no way to know
-// that two names were on top of each other.
-document.getElementById('nh').innerHTML =
-  HOODS.map(l=>`<g class="tg" data-k="${{l[3]}}">`+
-    `<text class="nn" x="${{l[1]}}" y="${{l[2]}}">${{l[0]}}</text></g>`)
-    .join('');
-document.getElementById('tw').innerHTML =
-  TOWNS.map(l=>`<g class="tg" data-k="${{l[3]}}">`+
-    `<circle class="td" cx="${{l[1]}}" cy="${{l[2]}}" r="2"/>`+
-    `<text class="tn" x="${{l[1]}}" y="${{l[2]}}" dy="-0.7em">${{l[0]}}</text></g>`)
-    .join('');
+// Everything above the tiles belongs to the mesh that carried it, so the
+// whole overlay is rebuilt when the map switches flows rather than left
+// sitting over ground that has moved out from under it.
+let MBOXNOW=MBOX;
+function paintOverlay(m) {{
+  MBOXNOW=m.mbox;
+  document.getElementById('bd').innerHTML =
+    m.borders.map(d=>`<path class="sb" d="${{d}}"/>`).join('');
+  const _wt=document.getElementById('wt');
+  if(_wt) _wt.innerHTML =
+    m.waters.map(d=>`<path class="wr" d="${{d}}"/>`).join('');
+  const _pb=document.getElementById('pb');
+  if(_pb) _pb.innerHTML =
+    m.munis.map(d=>`<path class="prc" d="${{d}}"/>`).join('')
+    + m.munis.map(d=>`<path class="pr" d="${{d}}"/>`).join('');
+  const _mb=document.getElementById('mb');
+  // Casing first, then the dashes, so every ring is legible wherever it
+  // crosses a dark tile -- two passes rather than one path each, to keep all
+  // the casing underneath all the dashes where rings touch.
+  if(_mb) _mb.innerHTML =
+    m.metros.map(d=>`<path class="mrc" d="${{d}}"/>`).join('')
+    + m.metros.map(d=>`<path class="mr" d="${{d}}"/>`).join('');
+  document.getElementById('lb').innerHTML =
+    m.labels.map(l=>`<text class="sl" data-k="${{l[3]}}" x="${{l[1]}}" `+
+      `y="${{l[2]}}">${{l[0]}}</text>`).join('');
+  // Each place carries the zoom at which it appears, worked out in
+  // _label_zoom() from where the flow actually put it.  Deriving it here from
+  // the rank alone could not see the drawn positions, so it had no way to
+  // know that two names were on top of each other.
+  document.getElementById('nh').innerHTML =
+    m.hoods.map(l=>`<g class="tg" data-k="${{l[3]}}">`+
+      `<text class="nn" x="${{l[1]}}" y="${{l[2]}}">${{l[0]}}</text></g>`)
+      .join('');
+  document.getElementById('tw').innerHTML =
+    m.towns.map(l=>`<g class="tg" data-k="${{l[3]}}">`+
+      `<circle class="td" cx="${{l[1]}}" cy="${{l[2]}}" r="2"/>`+
+      `<text class="tn" x="${{l[1]}}" y="${{l[2]}}" `+
+      `dy="-0.7em">${{l[0]}}</text></g>`).join('');
+}}
+paintOverlay({{borders:BORDERS, waters:WATERS, munis:MUNIS, metros:METROS,
+               labels:LABELS, hoods:HOODS, towns:TOWNS, mbox:MBOX}});
 
 const VS=`#version 300 es
 in vec2 a_pos; in vec3 a_col; in vec3 a_id;
@@ -2384,6 +2547,11 @@ let TVAL=null, TU=null, TGDP=null, TU2=null, TPOP=null;
   const vx=new Uint16Array(vxb.buffer), vy=new Uint16Array(vyb.buffer);
   const quads=new Uint32Array(qb.buffer);
   TU=bb; TVAL=new Uint16Array(vb.buffer);
+  let vx2=null, vy2=null;
+  if (D.vx2) {{
+    const [a2, b2] = await Promise.all([D.vx2, D.vy2].map(unz));
+    vx2=new Uint16Array(a2.buffer); vy2=new Uint16Array(b2.buffer);
+  }}
 
   // Corners are shared in the file and expanded here, because each tile needs
   // its own colour and a shared vertex cannot carry two.
@@ -2439,7 +2607,20 @@ let TVAL=null, TU=null, TGDP=null, TU2=null, TPOP=null;
     gl.vertexAttribPointer(l,size,type,norm,0,0);
     return b;
   }}
-  buf(pos,'a_pos',2,gl.FLOAT,false);
+  const posBuf=buf(pos,'a_pos',2,gl.FLOAT,false);
+  // Switching flows rewrites the positions and nothing else: same tiles, same
+  // indices, same colour buffer.  The vertices are the only thing that is a
+  // property of which cartogram is being drawn.
+  reflow=(alt)=>{{
+    const ax=(alt&&vx2)?vx2:vx, ay=(alt&&vy2)?vy2:vy;
+    for(let t=0;t<NT;t++) for(let j=0;j<4;j++) {{
+      const v=quads[t*4+j], o=(t*4+j)*2;
+      pos[o]=ax[v]/65535*W; pos[o+1]=ay[v]/65535*H;
+    }}
+    gl.bindBuffer(gl.ARRAY_BUFFER,posBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER,0,pos);
+    draw();
+  }};
   const colBuf=buf(col,'a_col',3,gl.UNSIGNED_BYTE,true);
   // Repainting on a theme change means rewriting one buffer, not reloading
   // the map: the geometry and the tile indices are unchanged, only the colour
@@ -2963,7 +3144,7 @@ mq.addEventListener('change',()=>{{
 const fbox=document.getElementById('find'), hits=document.getElementById('hits');
 let hitList=[], hitAt=-1;
 function goTo(t) {{
-  const b=MBOX[t[0]];
+  const b=MBOXNOW[t[0]];
   if(b) {{
     // Frame the metropolitan area itself, which is what was asked for and the
     // only honest answer on a cartogram: Miami and Bakersfield are not the
@@ -3089,6 +3270,14 @@ if(phb) {{
     if(a) a.hidden=!!MODE;
     if(b) b.hidden=!MODE;
     if(TU2) repaint();
+    if(ALT) {{
+      paintOverlay(MODE ? ALT
+                        : {{borders:BORDERS, waters:WATERS, munis:MUNIS,
+                            metros:METROS, labels:LABELS, hoods:HOODS,
+                            towns:TOWNS, mbox:MBOX}});
+      reflow(MODE);
+      hud.textContent=view.k.toFixed(1)+'x';
+    }}
   }});
 }}
 </script>
