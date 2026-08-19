@@ -220,11 +220,10 @@ def _cut(block, nx, title, where, window, src="land", mesh=None,
                 if diverge else
                 ("The shade is land value per square kilometre of real "
                  "ground. <b>Per resident</b> divides that by the people who "
-                 "live on the same tile, which is a different question: not "
-                 "where the dear ground is, but where the dear ground is "
-                 "carrying few people. A tower block and a golf course can "
-                 "cost the same by the acre and differ a thousandfold by the "
-                 "head.")
+                 "live on the same tile, which asks something else: how much "
+                 "land value each resident stands on. An apartment block and "
+                 "a golf course can be worth the same by the acre and differ "
+                 "a thousandfold once you divide by the people on them.")
                 if land else
                 "The shade is GDP per square kilometre of real ground."),
         caption=("land value per km&sup2; of real ground" if land
@@ -360,15 +359,17 @@ _SRC_GDP = ("Output: BEA county GDP for 2023 (CAGDP2) on twenty industry "
 _SRC_NAMES = (f"Cities: Census metropolitan areas over {MIN_METRO:,.0f} "
               "people (ACS 2023), at their largest place.")
 
-_SRC_LIMITS = ('City limits: Census incorporated places <i>and</i> county '
-               'subdivisions, 2023 cartographic boundaries at 1:500,000, '
-               'kept where the Census records the unit as an active '
-               'government. That second file is what draws the towns of New '
-               'England and New York and the townships of New Jersey, '
-               'Pennsylvania and the Midwest, which are governments but not '
-               '&ldquo;places&rdquo;. Census designated places and the '
-               'statistical townships of the other thirty states are not '
-               'drawn: they have no government, and so no boundary.')
+_SRC_LIMITS = ('Town lines: Census incorporated places, county subdivisions '
+               'and census designated places, 2023 cartographic boundaries '
+               'at 1:500,000. <b>Solid</b> is a government &mdash; a city, a '
+               'village, or one of the towns and townships that govern in '
+               'twenty states, which is what draws the towns of New England '
+               'and New York and the townships of New Jersey, Pennsylvania '
+               'and the Midwest. <b>Dotted</b> is a census designated place: '
+               'a settlement the Census draws a line around so it can count '
+               'it, with no government inside. Most of Long Island is '
+               'dotted. The statistical townships of the thirty states where '
+               'a township governs nothing are not drawn at all.')
 _SRC_POP = ('Residents: the 2020 Census of Population and Housing, counted '
             'by census block &mdash; the finest unit the count is published '
             'for, and a headcount rather than a model. The median occupied '
@@ -422,6 +423,7 @@ def main(argv):
     # drawn from: a line around a town with no name on it is half a fact.
     pshapes = (muni_bounds(geo, r["flat"], geo["tx"] * geo["side"] / r["nx"])
                if geo["window"] is not None else None)
+    pkind = [] if pshapes is None else pshapes.kind.tolist()
     # The anchors ride the flow, so changing this count invalidates every
     # cached mesh -- it is raised only when there is something to say.
     city_name, city_xy = cities(geo, ANCHORS, munis=pshapes)
@@ -454,34 +456,50 @@ def main(argv):
     # Not area is price-per-resident.  A ratio is an attribute of a place, not
     # a quantity to be summed, so there is nothing for a cartogram to encode
     # in its area -- the same reason land_vs_output_map_us is drawn on equal
-    # ground.  What does sum is the population, and drawing that is what makes
-    # the per-resident colour mean something: a tile's area is the people on
-    # it, its colour is the land each of them stands on, and the two
-    # multiplied are the land value.  Dense cheap ground swells and empty dear
-    # ground shrinks, which is the adjustment for density stated as geometry
-    # rather than as a legend.
+    # ground.  So the second flow is run on the land value per resident
+    # itself: the ground where each resident stands on the most land value is
+    # the ground that swells, which is the question a reader asks of a
+    # per-resident map.
+    #
+    # It is worth being plain about what that costs.  Area on the price map is
+    # a share of a total and the shares add to one.  Area here is a ratio, and
+    # ratios do not add: the page is honest about which places carry more
+    # land value per resident than which, and its total area means nothing at
+    # all.  The figure
+    # says so rather than leaving it to be inferred.
     moved2 = None
     if people is not None and not r["flat"]:
         pv = people.ravel()[tiles]
+        tv = value.ravel()[tiles]
         live = pv > 0
-        # Ground with nobody on it cannot be drawn at nothing without tearing
-        # the sheet, so it is held at a floor and shrinks instead, exactly as
-        # the output map holds land that produces nothing.
-        floor = np.percentile(pv[live], 1) if live.any() else 1.0
-        held = np.where(live, pv, floor)
-        pop_grid = np.zeros(value.size)
-        pop_grid[tiles] = held
-        e2, f2 = solver_field(pop_grid.reshape(value.shape), geo, r["nx"])
-        print(f"\n  a second flow, on people rather than money: "
+        per = np.zeros_like(tv)
+        per[live] = tv[live] / pv[live]
+        # Ground with nobody on it has no price per resident at all -- it is a
+        # division by zero, not a very large number -- so it cannot be drawn
+        # at its "value".  It is held at the bottom of the scale and shrinks,
+        # exactly as the output map holds land that produces nothing, and it
+        # is the same ground the colour leaves grey.
+        floor = np.percentile(per[live], 1) if live.any() else 1.0
+        held = np.where(live, per, floor)
+        per_grid = np.zeros(value.size)
+        per_grid[tiles] = held
+        e2, f2 = solver_field(per_grid.reshape(value.shape), geo, r["nx"])
+        print(f"\n  a second flow, on land value per resident: "
               f"{int(live.sum()):,d} of {len(pv):,d} drawn tiles have a "
-              f"resident, the rest held at {floor:,.1f}")
-        moved2 = cached(key + "-pop", r, f2, e2, pts, quads, held)
+              f"resident; the rest have no ratio and are held at "
+              f"${floor:,.0f} so they shrink rather than tear the sheet")
+        moved2 = cached(key + "-per", r, f2, e2, pts, quads, held)
 
+    # The third geometry costs no solve at all: it is where the ground
+    # actually is, which is what `pts` already holds before any flow touched
+    # them.  A reader who wants to know whether a place is big because it is
+    # dear or big because it is big has nowhere else to look.
+    moved3 = None if r["flat"] else pts
     render(key, r, value, geo, tiles, quads, moved, len(lattice),
            bidx, postal, names, lab0, real.ravel()[tiles], midx=midx,
            widx=widx, pidx=pidx, n_town=n_town,
            people=(None if people is None else people.ravel()[tiles]),
-           moved2=moved2,
+           moved2=moved2, moved3=moved3, pkind=pkind,
            mgeo=(mshapes.GEOID.tolist() if mshapes is not None else []))
     return 0
 
@@ -938,21 +956,43 @@ def _muni():
     villages are places and were drawn; Hempstead, Oyster Bay, Islip, Babylon
     and Brookhaven are towns, which in New York are county subdivisions and
     not places at all, so the lines a reader would call the town lines were
-    missing from exactly the ground they cover.  Both layers are the answer,
-    and FUNCSTAT is what keeps the statistical impostors out of each.
+    missing from exactly the ground they cover.
+
+    Long Island then stayed half empty for a second reason.  Commack, Dix
+    Hills, Hauppauge, Levittown, Syosset, Melville -- the names a reader knows
+    the island by -- have no government at all.  They are census designated
+    places: the Census draws a boundary around a settlement so it can count
+    it, and no mayor stands inside.  Excluding them is right for a layer that
+    claims to show where one government stops, and wrong for a reader who can
+    see the name and not the town.
+
+    So all three are drawn and the third is drawn differently -- dotted, and
+    fainter.  A solid line is a jurisdiction; a dotted one is a place that the
+    Census recognises and no one governs.  The distinction is the map's to
+    make, not the reader's to guess, so it is made in the ink.
     """
     g = _MUNI_CACHE.get("all")
     if g is None:
         cols = ["GEOID", "NAME", "ALAND", "geometry"]
-        pl = _active(gpd.read_file(f"zip://{PLACES}").to_crs(ALBERS),
-                     GAZDIR / "2023_Gaz_place_national.txt")[cols]
+        allp = gpd.read_file(f"zip://{PLACES}").to_crs(ALBERS)
+        pl = _active(allp, GAZDIR / "2023_Gaz_place_national.txt")[cols]
         cs = _active(gpd.read_file(f"zip://{COUSUBS}").to_crs(ALBERS),
                      GAZDIR / "2023_Gaz_cousubs_national.txt",
                      keep={"A"})[cols]
-        # Places first, so that where a place and a subdivision are the same
-        # ground it is the place that survives the dedupe below.
-        g = pd.concat([pl.assign(kind="place"), cs.assign(kind="cousub")],
-                      ignore_index=True)
+        # LSAD 57 is the census designated place proper, which is the whole of
+        # what is wanted here: the other statistical codes in this file are
+        # balances and remainders, not settlements anybody names.
+        cd = _active(allp[allp.LSAD == "57"],
+                     GAZDIR / "2023_Gaz_place_national.txt",
+                     keep={"S"})[cols]
+        # `order` and not the name of the kind: sorted alphabetically "cousub"
+        # comes before "place", so the dedupe below was keeping the
+        # subdivision and dropping the place -- the opposite of the comment
+        # that used to sit here.  Harmless on the page, because the two are
+        # drawn alike and named alike, and wrong in the counts this prints.
+        g = pd.concat([pl.assign(kind="place", order=0),
+                       cs.assign(kind="cousub", order=1),
+                       cd.assign(kind="cdp", order=2)], ignore_index=True)
         g = gpd.GeoDataFrame(g, geometry="geometry", crs=pl.crs)
         _MUNI_CACHE["all"] = g
     return g
@@ -970,7 +1010,7 @@ def muni_bounds(geo, flat, cell):
     g = g[g.intersects(box)]
     g["geometry"] = g.geometry.intersection(box)
     g = g[~g.geometry.is_empty & (g.geometry.area > MUNI_MIN_KM2 * 1e6)]
-    g = g.sort_values(["kind", "ALAND"], ascending=[True, False])
+    g = g.sort_values(["order", "ALAND"], ascending=[True, False])
     g = g.reset_index(drop=True)
     g = g[_distinct(g)].reset_index(drop=True)
     tol = max(geo["tx"] * geo["side"] / DRAW_W / MAX_ZOOM, 5.0)
@@ -982,8 +1022,9 @@ def muni_bounds(geo, flat, cell):
                          for q in g.geometry]
     g = g[~g.geometry.is_empty].reset_index(drop=True)
     n = g.kind.value_counts()
-    print(f"  {len(g):,d} municipal boundaries to draw "
-          f"({n.get('place', 0):,d} incorporated places, "
+    print(f"  {len(g):,d} town boundaries to draw "
+          f"({n.get('cdp', 0):,d} census places with no government, "
+          f"{n.get('place', 0):,d} incorporated places, "
           f"{n.get('cousub', 0):,d} towns and townships)")
     return g
 
@@ -1637,7 +1678,8 @@ def _named_boxes(mbox, mgeo):
 
 def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
            lab0, real, tile_value, areas, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None, people=None, moved2=None):
+           pidx=(), n_town=None, people=None, moved2=None, moved3=None,
+           pkind=()):
     """Everything both pages need: the drawing box, the colours, the payload.
 
     The document figure and the scrolled story draw the same tiles with the
@@ -1651,7 +1693,7 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     # have to share a viewBox or the whole map would jump when the switch is
     # thrown.  Fitting the union costs a little margin on each and buys a
     # switch that only moves the ground.
-    both = moved if moved2 is None else np.vstack([moved, moved2])
+    both = np.vstack([m for m in (moved, moved2, moved3) if m is not None])
     bx0, by0 = both.min(0)
     bx1, by1 = both.max(0)
     span = max(bx1 - bx0, by1 - by0)
@@ -1773,12 +1815,14 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     if u2 is not None:
         blobs["u2"] = u2[draw].tobytes()
         blobs["pop"] = pop16[draw].tobytes()
-    if moved2 is not None:
-        p2 = to_px(moved2[:n_lattice])
-        blobs["vx2"] = np.clip(np.round(p2[:, 0] / W * 65535),
-                               0, 65535).astype("<u2").tobytes()
-        blobs["vy2"] = np.clip(np.round(p2[:, 1] / H * 65535),
-                               0, 65535).astype("<u2").tobytes()
+    for tag, mv in (("2", moved2), ("3", moved3)):
+        if mv is None:
+            continue
+        q = to_px(mv[:n_lattice])
+        blobs["vx" + tag] = np.clip(np.round(q[:, 0] / W * 65535),
+                                    0, 65535).astype("<u2").tobytes()
+        blobs["vy" + tag] = np.clip(np.round(q[:, 1] / H * 65535),
+                                    0, 65535).astype("<u2").tobytes()
     if r["diverge"]:
         g2 = np.clip(np.round((np.log10(np.maximum(gdp, 1.0)) - 3) * 4096),
                      0, 65535).astype("<u2")
@@ -1837,13 +1881,16 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
                 continue
             waters.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
                           + "Z")
-        munis = []
-        for _, start, n in pidx:
+        # Two lists, because the two are drawn differently: a solid line is a
+        # government and a dotted one is a settlement the Census names and
+        # nobody governs.
+        munis, cdps = [], []
+        for i, start, n in pidx:
             ring = to_px(mv[start:start + n])
             if len(ring) < 4:
                 continue
-            munis.append("M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring)
-                         + "Z")
+            d = "M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring) + "Z"
+            (cdps if pkind[i] == "cdp" else munis).append(d)
         codes, lp = _drawn_anchors(big, postal)
         cp = to_px(mv[lab0:])
         tp, hp = cp[:n_town], cp[n_town:]
@@ -1863,6 +1910,7 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
                   "drawn")
         return dict(
             borders=borders, metros=metros, waters=waters, munis=munis,
+            cdps=cdps,
             mbox=_named_boxes(mbox, mgeo),
             labels=[[q, round(float(x), 1), round(float(y), 1), k]
                     for (q, (x, y)), k in zip(zip(codes, lp),
@@ -1878,12 +1926,14 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
         n_town = len(moved) - lab0
     A = place(moved)
     B = place(moved2) if moved2 is not None else None
+    C = place(moved3) if moved3 is not None else None
     return dict(W=W, H=H, base=base, span=span, lo=lo, hi=hi, draw=draw,
                 lo2=lo2, hi2=hi2, hasper=u2 is not None, payload=payload,
                 density=density, bx=(bx0, by0, bx1, by1), to_px=to_px,
-                two=B is not None, A=A, B=B,
+                two=B is not None, A=A, B=B, C=C,
                 borders=A["borders"], metros=A["metros"], waters=A["waters"],
-                munis=A["munis"], mbox=A["mbox"], labels=A["labels"],
+                munis=A["munis"], cdps=A["cdps"], mbox=A["mbox"],
+                labels=A["labels"],
                 towns=A["towns"], hoods=A["hoods"],
                 still=(still_px, still_quads, still_u))
 
@@ -2169,7 +2219,8 @@ def still(path, px, quads, u, W, H):
 
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
            postal, city_name, lab0, real, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None, people=None, moved2=None):
+           pidx=(), n_town=None, people=None, moved2=None, moved3=None,
+           pkind=()):
     FIG.mkdir(parents=True, exist_ok=True)
     tile_value = value.ravel()[tiles]
     areas = _areas(moved, quads)
@@ -2201,7 +2252,8 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
     s = _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal,
                city_name, lab0, real, tile_value, areas, midx=midx,
                widx=widx, mgeo=mgeo, pidx=pidx, n_town=n_town,
-               people=people, moved2=moved2)
+               people=people, moved2=moved2, moved3=moved3,
+               pkind=pkind)
     W, H = s["W"], s["H"]
     base, span, lo, hi = s["base"], s["span"], s["lo"], s["hi"]
     draw, payload, borders = s["draw"], s["payload"], s["borders"]
@@ -2299,9 +2351,10 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         n=len(draw),
         km2=f"{side*side:.6f}",
         metros=json.dumps(s["metros"]), waters=json.dumps(s["waters"]),
-        munis=json.dumps(s["munis"]), hoods=json.dumps(s["hoods"]),
+        munis=json.dumps(s["munis"]), cdps=json.dumps(s["cdps"]),
+        hoods=json.dumps(s["hoods"]),
         mbox=json.dumps(s["mbox"]),
-        alt=json.dumps(s["B"]),
+        alt=json.dumps(s["B"]), flatgeo=json.dumps(s["C"]),
         data=json.dumps(payload), base=f"{base:.6f}" if r["diverge"] else "1",
         borders=json.dumps(borders),
         labels=json.dumps(s["labels"]), towns=json.dumps(s["towns"]),
@@ -2428,10 +2481,14 @@ try {{
 }} catch(e) {{}}
 const D={data};
 const BORDERS={borders}, METROS={metros}, WATERS={waters}, MBOX={mbox};
-const MUNIS={munis}, HOODS={hoods}, HASPER={perhead};
+const MUNIS={munis}, CDPS={cdps}, HOODS={hoods}, HASPER={perhead};
 // The same tiles under a second flow, where area is people rather than money.
 // Null on a cut that has no population layer.
-const ALT={alt};
+const ALT={alt}, FLATGEO={flatgeo};
+// Which geometry is drawn: 0 land value, 1 land value per resident, 2 none.
+// It is not the same thing as MODE, which is the colour: the ground can be
+// left undeformed under either colouring, and that is the point of it.
+let GEOM=0;
 // 0 = land value per square kilometre, 1 = land value per resident.  The two
 // share every vertex; only the byte that indexes the ramp differs.
 let MODE=0;
@@ -2481,7 +2538,9 @@ function paintOverlay(m) {{
     m.waters.map(d=>`<path class="wr" d="${{d}}"/>`).join('');
   const _pb=document.getElementById('pb');
   if(_pb) _pb.innerHTML =
-    m.munis.map(d=>`<path class="prc" d="${{d}}"/>`).join('')
+    (m.cdps||[]).map(d=>`<path class="prc" d="${{d}}"/>`).join('')
+    + m.munis.map(d=>`<path class="prc" d="${{d}}"/>`).join('')
+    + (m.cdps||[]).map(d=>`<path class="cd" d="${{d}}"/>`).join('')
     + m.munis.map(d=>`<path class="pr" d="${{d}}"/>`).join('');
   const _mb=document.getElementById('mb');
   // Casing first, then the dashes, so every ring is legible wherever it
@@ -2547,7 +2606,11 @@ let TVAL=null, TU=null, TGDP=null, TU2=null, TPOP=null;
   const vx=new Uint16Array(vxb.buffer), vy=new Uint16Array(vyb.buffer);
   const quads=new Uint32Array(qb.buffer);
   TU=bb; TVAL=new Uint16Array(vb.buffer);
-  let vx2=null, vy2=null;
+  let vx2=null, vy2=null, vx3=null, vy3=null;
+  if (D.vx3) {{
+    const [a3, b3] = await Promise.all([D.vx3, D.vy3].map(unz));
+    vx3=new Uint16Array(a3.buffer); vy3=new Uint16Array(b3.buffer);
+  }}
   if (D.vx2) {{
     const [a2, b2] = await Promise.all([D.vx2, D.vy2].map(unz));
     vx2=new Uint16Array(a2.buffer); vy2=new Uint16Array(b2.buffer);
@@ -2611,8 +2674,10 @@ let TVAL=null, TU=null, TGDP=null, TU2=null, TPOP=null;
   // Switching flows rewrites the positions and nothing else: same tiles, same
   // indices, same colour buffer.  The vertices are the only thing that is a
   // property of which cartogram is being drawn.
-  reflow=(alt)=>{{
-    const ax=(alt&&vx2)?vx2:vx, ay=(alt&&vy2)?vy2:vy;
+  // 0 the price cartogram, 1 the per-resident one, 2 the ground undeformed.
+  reflow=(g)=>{{
+    const ax=(g===2&&vx3)?vx3:(g===1&&vx2)?vx2:vx;
+    const ay=(g===2&&vy3)?vy3:(g===1&&vy2)?vy2:vy;
     for(let t=0;t<NT;t++) for(let j=0;j<4;j++) {{
       const v=quads[t*4+j], o=(t*4+j)*2;
       pos[o]=ax[v]/65535*W; pos[o+1]=ay[v]/65535*H;
@@ -2645,6 +2710,9 @@ let TVAL=null, TU=null, TGDP=null, TU2=null, TPOP=null;
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx,gl.STATIC_DRAW);
   ready=true; resize();
+  // The note under the legend says what area means, and it has to say it
+  // before anybody touches a switch.
+  if(typeof applyView==='function') applyView();
 }})();"""
 
 
@@ -2807,6 +2875,14 @@ svg.ov {{ pointer-events:none; }}
   vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 .pr {{ fill:none; stroke:var(--mapline); stroke-opacity:.72; stroke-width:1.2;
   vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
+/* A census designated place: a settlement the Census draws a line around so
+   it can count it, with no government inside.  Dotted and fainter than a
+   jurisdiction, because the difference between "this is where the town of
+   Islip ends" and "this is roughly what people mean by Commack" is a real one
+   and the map should carry it rather than leave the reader to know it. */
+.cd {{ fill:none; stroke:var(--mapline); stroke-opacity:.42; stroke-width:1.0;
+  stroke-dasharray:1.5 3; vector-effect:non-scaling-stroke;
+  stroke-linejoin:round; stroke-linecap:round; }}
 /* Water, on a cartogram, has been squeezed to almost nothing -- that is what
    the flow does to ground worth nothing.  Drawn as a thin dark line it is
    still legible as the East River, which is what tells Manhattan from
@@ -2892,6 +2968,10 @@ value.</p>
   <button id="limits" class="sw" type="button" role="switch"
     aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>city limits</button>
+  <button id="undeform" class="sw" type="button" role="switch"
+    aria-checked="false" title="draw every tile on the ground it actually
+    occupies, with no cartogram at all"
+    ><span class="tr"><span class="kn"></span></span>real ground</button>
   <button id="perhead" class="sw" type="button" role="switch"
     aria-checked="false" title="colour by land value per resident instead of
     per square kilometre"
@@ -2900,6 +2980,7 @@ value.</p>
     machine is set to">theme: system</button>
   {nav}
 </div>
+<p class="cap" id="areanote" style="margin:10px 0 0"></p>
 <div class="legend" id="lg1">{legend}</div>
 <div class="legend" id="lg2" hidden>{legend2}</div>
 <p class="notes"><b>What the colour says.</b> {colour}<br><br>
@@ -3255,29 +3336,65 @@ function layerSwitch(btn, layer, has) {{
   }});
 }}
 layerSwitch('metros','mb',METROS.length);
-layerSwitch('limits','pb',MUNIS.length);
+layerSwitch('limits','pb',MUNIS.length+CDPS.length);
 
-// The per-resident switch is not a layer: it repaints the tiles that are
-// already there.  Same geometry, same vertices, one different byte per tile
-// through the same ramp -- so it costs a buffer rewrite, not a reload.
+// Two controls over one pair of things.  MODE is the colour -- price, or
+// price per resident.  FLAT is whether the ground is deformed at all.  They
+// are separate because the useful combinations are not a single sequence: a
+// reader may want the per-resident colour on undeformed ground, which is the
+// only view where the eye can compare two places acre for acre.
+const SCENE0={{borders:BORDERS, waters:WATERS, munis:MUNIS, cdps:CDPS,
+               metros:METROS, labels:LABELS, hoods:HOODS, towns:TOWNS,
+               mbox:MBOX}};
+let FLAT=false;
+
+function applyView() {{
+  const g = FLAT ? 2 : (MODE ? 1 : 0);
+  GEOM = g;
+  // The overlays belong to the mesh that carried them: a boundary drawn on
+  // the price cartogram is in the wrong place on any other.
+  const scene = g===2 ? (FLATGEO || SCENE0) : g===1 ? (ALT || SCENE0) : SCENE0;
+  paintOverlay(scene);
+  reflow(g);
+  const a=document.getElementById('lg1'), b=document.getElementById('lg2');
+  if(a) a.hidden=!!MODE;
+  if(b) b.hidden=!MODE;
+  const note=document.getElementById('areanote');
+  if(note) note.textContent = g===2
+    ? 'Area is real ground \u2014 nothing here is distorted, so area carries '
+      + 'no meaning and only the colour does.'
+    : g===1
+    ? 'Area is land value per resident: the more land value each resident '
+      + 'stands on, the larger the ground is drawn. That is a ratio, and '
+      + 'ratios do not add up \u2014 the page compares one place with another '
+      + 'honestly, and its total area means nothing.'
+    : 'Area is land value: every tile is the same patch of real ground drawn '
+      + 'at its share of the money.';
+  hud.textContent=view.k.toFixed(1)+'x';
+}}
+
 const phb=document.getElementById('perhead');
 if(phb) {{
   if(!HASPER) phb.style.display='none';
   else phb.addEventListener('click',()=>{{
     MODE=MODE?0:1;
     phb.setAttribute('aria-checked',MODE?'true':'false');
-    const a=document.getElementById('lg1'), b=document.getElementById('lg2');
-    if(a) a.hidden=!!MODE;
-    if(b) b.hidden=!MODE;
     if(TU2) repaint();
-    if(ALT) {{
-      paintOverlay(MODE ? ALT
-                        : {{borders:BORDERS, waters:WATERS, munis:MUNIS,
-                            metros:METROS, labels:LABELS, hoods:HOODS,
-                            towns:TOWNS, mbox:MBOX}});
-      reflow(MODE);
-      hud.textContent=view.k.toFixed(1)+'x';
-    }}
+    applyView();
+  }});
+}}
+
+// Not `fb`: that name is already the picking framebuffer, a hundred lines
+// up and in the same scope.  Re-declaring it threw a SyntaxError at parse
+// time, which does not break one switch -- it stops the whole script, and
+// leaves a page that renders its HTML and does nothing at all.
+const flatBtn=document.getElementById('undeform');
+if(flatBtn) {{
+  if(!FLATGEO) flatBtn.style.display='none';
+  else flatBtn.addEventListener('click',()=>{{
+    FLAT=!FLAT;
+    flatBtn.setAttribute('aria-checked',FLAT?'true':'false');
+    applyView();
   }});
 }}
 </script>
