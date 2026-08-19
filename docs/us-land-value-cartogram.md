@@ -14,19 +14,14 @@ Twenty-one figures, all built by `src/land/make_us_cartogram.py`:
 
 The metro cuts are not written out one by one. A cut is derived from the metro
 itself — its name gives the file name, its Census boundary gives the shape —
-so any of the 82 metropolitan areas the map names can be asked for by its
-slug, and `CUT_N` decides how many are built for the site. The twenty largest
-are built today:
+so every metropolitan area the map names has one, and `CUT_N` decides how many
+are built for the site. All of them are, which is **81**: the Census
+delineates 82 over the population floor, and Honolulu is not on the
+conterminous lattice, so it has no tiles to draw and is not offered.
 
-| metro | tiles | metro | tiles | metro | tiles |
-| --- | ---: | --- | ---: | --- | ---: |
-| Riverside | 307,159 | Chicago | 78,903 | San Diego | 47,723 |
-| Phoenix | 164,063 | New York | 72,575 | Detroit | 44,991 |
-| Houston | 102,293 | Washington, D.C. | 69,080 | Boston | 40,935 |
-| Atlanta | 100,321 | Seattle | 67,085 | Baltimore | 30,233 |
-| Dallas | 99,684 | Miami | 58,831 | Tampa | 29,681 |
-| Denver | 94,242 | Los Angeles | 54,937 | San Francisco | 28,395 |
-| Minneapolis | 82,829 | Philadelphia | 53,130 | | |
+That last exclusion is tested against the lattice rather than against a list
+of states, so Anchorage or San Juan would fall out the same way if the floor
+ever reached them.
 
 A metropolitan area is not a square, so a cut is not one either. The boundary
 is rasterised onto the same 480 m lattice the tiles are cut from, and a tile
@@ -225,6 +220,66 @@ all. Miami has 11, because the city proper is small and Coral Gables, Hialeah
 and Kendall are other municipalities — the rule that is right for New York
 leaves that one cut thin.
 
+### Price, or price per resident
+
+The colour has a switch. By default it is land value per square kilometre of
+real ground — a price. **Per resident** divides that by the people living on
+the same tile, which asks a different question: not where the dear ground is,
+but where the dear ground is carrying few people. A tower block and a golf
+course can cost the same by the acre and differ a thousandfold by the head.
+On Baltimore the price spans 45-fold across the page and the price per
+resident spans 860-fold, so the two are not restatements of each other.
+
+Nothing about the geometry changes — area is still land value — so the switch
+rewrites one byte per tile through the same ramp rather than loading a second
+map.
+
+Ground with nobody on it is drawn grey, not dear. A price per resident there
+is a division by zero, and colouring it at the top of the scale would be a
+claim about the emptiest land on the map. Each figure prints how many tiles
+that is and what share of the page's land value they hold — on Baltimore,
+2,369 tiles and 8.4%.
+
+The people are counted, not modelled. The 2020 Census publishes population by
+block, which is the finest unit it publishes for: the median occupied block is
+**0.031 km², seven times smaller than a 480 m tile**. `build_us_population.py`
+lays those counts on the shared lattice and reconciles to the person —
+**329,260,619**, which is the published national count less Alaska and Hawaii,
+both off this lattice.
+
+Two thirds of occupied blocks are smaller than a 480 m cell and win no cell
+centre of their own; their people go on the tile holding the block's interior
+point, and the rest are spread evenly over the cells they cover. The build
+reports the split, because "spread over its cells" and "dropped on one tile"
+are different claims about where somebody lives.
+
+This replaces GHS-POP at 30 arc-seconds for this purpose. That grid is about
+800 m — finer than the 3.84 km national tile and *coarser than the 480 m tile
+of a metro cut*, which is the scale at which the question is interesting.
+
+### Checking the city limits
+
+`audit_municipal.py` runs the boundary layer against all 81 metros and prints
+what it finds. It asks the questions a wrong answer shows up in: does every
+metro have a boundary at all; does its own principal city have one, since that
+is the row a cut searches to find the city whose neighbourhoods it names; do
+the strong-MCD states draw subdivisions **and the other thirty not**; and how
+much of each metro's land and people sit inside a municipality.
+
+All four checks pass across 81 metros — 5,198 incorporated places and 2,651
+towns and townships in total, with 52 of the 81 metros drawing no subdivision
+at all, which is exactly the thirty states where subdivisions do not govern.
+
+The coverage figures are the layer's own evidence. Every metro that reaches
+100% of land *and* 100% of people is in a strong-MCD state, because
+subdivisions tile a county with no gaps — Dayton, South Bend, Milwaukee,
+Bridgeport. The median metro is 20% of land and 79% of people. The bottom is
+not a defect either: Richmond, Baltimore and Washington run at 3–5% of land
+and 24–27% of people, because their counties are largely unincorporated. That
+gap between land and people is the fact — American metros are mostly
+unincorporated ground with the population concentrated in the incorporated
+part.
+
 ### When a name appears
 
 Room on a page is an area, so the count that fits grows with the square of the
@@ -332,17 +387,23 @@ remaining fifth, no amount of assembly helps.
 
 | path | what |
 | --- | --- |
-| `src/land/make_us_cartogram.py` | all three cuts |
+| `src/land/make_us_cartogram.py` | the national map and every metro cut |
+| `src/land/build_us_population.py` | census-block population on the shared lattice |
+| `src/land/audit_municipal.py` | the city-limits layer, checked against all 81 metros |
+| `src/land/publish_maps.py` | copies the built figures to the public site repository, all or none |
 | `src/land/parcel_feasibility.py` | the coverage study below |
 | `data/land/us_cartogram_check_<cut>.csv.gz` | every tile: grid position, value, price per km², and its share of the drawing (which should equal its share of the value) |
 | `data/land/parcel_feasibility.csv` | 29 countries, their best available land valuation, and whether the link still answers |
 | `data/land/inputs/places_fmv/` | the two source rasters, unmodified |
+| `data/land/us_pop_480m.npy` | 329,260,619 residents on the 480 m lattice |
 
 ## Reproducing
 
 ```bash
+python3 src/land/build_us_population.py             # once: 5.6 GB of blocks
 python3 src/land/make_us_cartogram.py us
 python3 src/land/make_us_cartogram.py new-york      # or any metro's slug
+python3 src/land/audit_municipal.py                # check the city limits
 python3 src/land/parcel_feasibility.py
 ```
 

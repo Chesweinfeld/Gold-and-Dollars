@@ -19,9 +19,13 @@ data/land/cache/
 data/land/inputs/
 
 # Build intermediates that are too big to keep in git and cost minutes, not
-# hours, to remake.  us_gdp_points.npz is 110 MB, over GitHub's own file limit.
+# hours, to remake.  us_gdp_points.npz is 110 MB and us_pop_480m.npy is 222
+# MB, both over GitHub's own 100 MB file limit -- the second was committed
+# once by a `git add -A` and the push was refused, which is the only reason
+# anybody found out.
 data/land/us_gdp_points.npz
 data/land/us_private_share.npy
+data/land/us_pop_480m.npy
 
 # Machine-local Claude Code settings.
 .claude/settings.local.json

@@ -218,7 +218,13 @@ def _cut(block, nx, title, where, window, src="land", mesh=None,
                 "where the output is known only by county and is not drawn "
                 "at this scale."
                 if diverge else
-                "The shade is land value per square kilometre of real ground."
+                ("The shade is land value per square kilometre of real "
+                 "ground. <b>Per resident</b> divides that by the people who "
+                 "live on the same tile, which is a different question: not "
+                 "where the dear ground is, but where the dear ground is "
+                 "carrying few people. A tower block and a golf course can "
+                 "cost the same by the acre and differ a thousandfold by the "
+                 "head.")
                 if land else
                 "The shade is GDP per square kilometre of real ground."),
         caption=("land value per km&sup2; of real ground" if land
@@ -247,11 +253,12 @@ REGIONS = {
                         diverge=True, flat=True),
 }
 
-# How many metros get a cut of their own.  Each costs about eight minutes to
-# solve and four megabytes to serve, so this is a budget rather than a
-# principle: raise it and rebuild to give more of them one.  Everything below
-# the line still gets framed on the national map when searched.
-CUT_N = 20
+# How many metros get a cut of their own.  A budget rather than a principle:
+# raise it and rebuild to give more of them one, and everything below the line
+# still gets framed on the national map when searched.  It is now every metro
+# the map names -- about a minute of solve and a megabyte or two each, which
+# is affordable in a way the first estimate of eight minutes was not.
+CUT_N = 82
 
 
 def cut_slugs():
@@ -362,6 +369,10 @@ _SRC_LIMITS = ('City limits: Census incorporated places <i>and</i> county '
                '&ldquo;places&rdquo;. Census designated places and the '
                'statistical townships of the other thirty states are not '
                'drawn: they have no government, and so no boundary.')
+_SRC_POP = ('Residents: the 2020 Census of Population and Housing, counted '
+            'by census block &mdash; the finest unit the count is published '
+            'for, and a headcount rather than a model. The median occupied '
+            'block is 0.031 km&sup2;, seven times smaller than a 480 m tile.')
 _SRC_HOODS = ('Neighbourhoods: OpenStreetMap contributors, '
               '<a href="https://www.openstreetmap.org/copyright">ODbL</a>. '
               'No official dataset of American neighbourhoods exists; these '
@@ -387,6 +398,11 @@ def main(argv):
     geo["clip"] = r["clip"]
     if r["clip"] is not None:
         value, real = clip_tiles(value, real, geo)
+    # The per-resident view is a recolouring of this same map, so it is only
+    # offered where the colour is a price: not on the output map, and not on
+    # the ratio maps, which are already a comparison of two quantities.
+    people = (pop_tiles(geo, r["block"])
+              if r["src"] == "land" and not r["diverge"] else None)
     lattice, tiles, quads = build_mesh(value)
     extent, field = ((None, None) if r["flat"]
                      else solver_field(value, geo, r["nx"]))
@@ -434,6 +450,7 @@ def main(argv):
     render(key, r, value, geo, tiles, quads, moved, len(lattice),
            bidx, postal, names, lab0, real.ravel()[tiles], midx=midx,
            widx=widx, pidx=pidx, n_town=n_town,
+           people=(None if people is None else people.ravel()[tiles]),
            mgeo=(mshapes.GEOID.tolist() if mshapes is not None else []))
     return 0
 
@@ -534,6 +551,30 @@ def _geo(block, window):
                 side=GRID["res"] * block,
                 tx=ncol // block, ty=nrow // block,
                 col0=col0, row0=row0, window=window)
+
+
+POP_GRID = DATA / "us_pop_480m.npy"
+
+
+def pop_tiles(geo, block):
+    """Residents per tile, from the 2020 census blocks.
+
+    The grid is built once by build_us_population.py on this same lattice, so
+    this is a window and a block-sum and nothing else -- the same treatment
+    the land raster gets, which is what keeps a tile's people and a tile's
+    price describing the same ground.
+    """
+    if not POP_GRID.exists():
+        raise SystemExit(f"missing {POP_GRID} -- run "
+                         "src/land/build_us_population.py")
+    g = np.load(POP_GRID, mmap_mode="r")
+    if g.shape != (GRID["ny"], GRID["nx"]):
+        raise SystemExit("the population grid is not the lattice GRID "
+                         "describes")
+    ty, tx, col0, row0 = geo["ty"], geo["tx"], geo["col0"], geo["row0"]
+    w = np.asarray(g[row0:row0 + ty * block, col0:col0 + tx * block],
+                   dtype=np.float64)
+    return w.reshape(ty, block, tx, block).sum(axis=(1, 3))
 
 
 def _gdp_tiles(geo, kinds=(0, 1, 2)):
@@ -1072,8 +1113,27 @@ def _metros(floor):
         nm = re.sub(r"\s+", " ", p.NAME).strip()
         label[nm] = r.GEOID
         out.append((nm, p.geometry.x, p.geometry.y))
+    # The lattice is the conterminous states, so a metro off it has no tiles
+    # to draw and no business being offered as a cut.  Honolulu is the only
+    # one today -- it qualifies on population like any other, and a page for
+    # it would come out empty.  Tested against the lattice rather than against
+    # a list of states, so Anchorage or San Juan would fall out the same way
+    # if the population floor ever reached them.
+    x0, y1 = GRID["x0"], GRID["y1"]
+    x1, y0 = x0 + GRID["nx"] * GRID["res"], y1 - GRID["ny"] * GRID["res"]
+    on = [t for t in out if x0 <= t[1] <= x1 and y0 <= t[2] <= y1]
+    if len(on) != len(out):
+        gone = ", ".join(t[0] for t in out if t not in on)
+        # To stderr, not stdout.  This is a diagnostic emitted from inside a
+        # data function, and callers capture that function's stdout to get a
+        # list of slugs -- publish_maps.py does, and so does the shell loop
+        # that builds every cut.  Printed to stdout it became the first
+        # "metro" in that list, and a whole 82-page build did nothing at all.
+        print(f"  {len(out) - len(on)} metro area(s) are not on the "
+              f"conterminous lattice and get no cut: {gone}", file=sys.stderr)
+        label = {k: v for k, v in label.items() if any(t[0] == k for t in on)}
     _METRO_CACHE["label"] = label
-    return out
+    return on
 
 
 GAZ = IN / "gaz" / "2023_Gaz_place_national.txt"
@@ -1149,10 +1209,17 @@ def _overpass(query, path, tries=4):
                            capture_output=True, text=True)
         if not r.returncode and path.exists() and path.stat().st_size > 200:
             try:
-                if json.loads(path.read_text()).get("elements"):
-                    return True
-            except ValueError:
-                pass
+                json.loads(path.read_text())["elements"]
+            except (ValueError, KeyError):
+                pass                       # a truncated or error reply
+            else:
+                # An empty list is an answer, not a failure.  Overpass returns
+                # a perfectly good reply saying that nobody has tagged a
+                # neighbourhood inside Bakersfield, and an earlier version
+                # read that as a refusal: it retried four times across three
+                # mirrors, deleted the cache so the next build would do it
+                # again, and reported a data gap as a network fault.
+                return True
         path.unlink(missing_ok=True)
         if i < tries - 1:
             time.sleep(10 * (i + 1))
@@ -1223,6 +1290,9 @@ def _hoods(geo, city, citypt, value):
     nm = [(e["tags"]["name"], e["lon"], e["lat"]) for e in el
           if e.get("tags", {}).get("name")]
     if not nm:
+        print(f"  OpenStreetMap has no neighbourhood tagged inside {city}; "
+              "the cut gets none, which is a gap in the map and not in the "
+              "fetch")
         return []
     x, y = pyproj.Transformer.from_crs(4326, ALBERS, always_xy=True).transform(
         np.array([e[1] for e in nm]), np.array([e[2] for e in nm]))
@@ -1443,7 +1513,7 @@ def _named_boxes(mbox, mgeo):
 
 def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
            lab0, real, tile_value, areas, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None):
+           pidx=(), n_town=None, people=None):
     """Everything both pages need: the drawing box, the colours, the payload.
 
     The document figure and the scrolled story draw the same tiles with the
@@ -1530,6 +1600,38 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     vq = np.clip(np.round((np.log10(np.maximum(tile_value, 1.0)) - 3) * 4096),
                  0, 65535).astype("<u2")
 
+    # The second colouring: the same price, per resident of the same tile.
+    # Nothing about the geometry changes -- area is still land value -- so
+    # this is one more byte per tile and a switch, not another map.
+    u2 = lo2 = hi2 = pop16 = None
+    if people is not None:
+        pp = np.zeros_like(tile_value)
+        live = (people > 0) & real
+        pp[live] = tile_value[live] / people[live]
+        if live.any():
+            logp = np.log10(np.maximum(pp, 1.0))
+            lo2, hi2 = _wpct(logp[live], tile_value[live], [2, 99.5])
+            q = np.clip(np.round((logp - lo2) / max(hi2 - lo2, 1e-9) * 254),
+                        0, 254)
+            # 255 is the sentinel for ground nobody lives on, not the top of
+            # a scale: on that ground the price per resident is a division by
+            # zero, and drawing it as "very dear" would be a lie about the
+            # emptiest land on the map.
+            u2 = np.where(live, q, 255).astype("u1")
+            # Four bytes, not two.  A 480 m tile tops out around eighteen
+            # thousand residents and would fit in sixteen bits, but the
+            # national cut is 3.84 km and its busiest tile holds 399,597 --
+            # so the narrow type worked on every metro and failed on the one
+            # map that covers the country.  The extra bytes cost almost
+            # nothing after deflate, because most of the array is zero.
+            pop16 = np.round(people).astype("<u4")
+            print(f"  per resident: ${10**lo2:,.0f} to ${10**hi2:,.0f} "
+                  f"(2nd to 99.5th percentile of the page, by value); "
+                  f"{(~live & real).sum():,d} of {int(real.sum()):,d} tiles "
+                  f"have no resident "
+                  f"({tile_value[~live & real].sum()/tile_value[real].sum():.1%}"
+                  " of the land value on the page)")
+
     # Only the real tiles are shipped; the floor tiles did their work in the
     # flow and have no business in the picture.
     draw = np.nonzero(real & (areas > 0))[0]
@@ -1538,6 +1640,9 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
         "quads": quads[draw].astype("<u4").tobytes(),
         "u": u[draw].tobytes(), "val": vq[draw].tobytes(),
     }
+    if u2 is not None:
+        blobs["u2"] = u2[draw].tobytes()
+        blobs["pop"] = pop16[draw].tobytes()
     if r["diverge"]:
         g2 = np.clip(np.round((np.log10(np.maximum(gdp, 1.0)) - 3) * 4096),
                      0, 65535).astype("<u2")
@@ -1616,6 +1721,7 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
               "clear space at any zoom this map reaches, and are not drawn")
     codes, lp = _drawn_anchors(big, postal)
     return dict(W=W, H=H, base=base, span=span, lo=lo, hi=hi, draw=draw,
+                lo2=lo2, hi2=hi2, hasper=u2 is not None,
                 payload=payload, borders=borders, metros=metros,
                 waters=waters, munis=munis, mbox=_named_boxes(mbox, mgeo),
                 hoods=[[q, round(float(x), 1), round(float(y), 1), k]
@@ -1913,7 +2019,7 @@ def still(path, px, quads, u, W, H):
 
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
            postal, city_name, lab0, real, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None):
+           pidx=(), n_town=None, people=None):
     FIG.mkdir(parents=True, exist_ok=True)
     tile_value = value.ravel()[tiles]
     areas = _areas(moved, quads)
@@ -1944,7 +2050,8 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
 
     s = _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal,
                city_name, lab0, real, tile_value, areas, midx=midx,
-               widx=widx, mgeo=mgeo, pidx=pidx, n_town=n_town)
+               widx=widx, mgeo=mgeo, pidx=pidx, n_town=n_town,
+               people=people)
     W, H = s["W"], s["H"]
     base, span, lo, hi = s["base"], s["span"], s["lo"], s["hi"]
     draw, payload, borders = s["draw"], s["payload"], s["borders"]
@@ -2021,6 +2128,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         W=f"{W:.0f}", H=f"{H:.0f}", maxk=f"{MAX_ZOOM:.0f}",
         title=_esc(r["title"]), where=_esc(r["where"]),
         provenance=(PROVENANCE["ratio" if r["diverge"] else r["src"]]
+                    + (" " + _SRC_POP if s["hasper"] else "")
                     + (" " + _SRC_LIMITS if s["munis"] else "")
                     + (" " + _SRC_HOODS if s["hoods"] else "")),
         lede=(f"Every square is the same {side:.2f} km of real ground, drawn "
@@ -2052,6 +2160,10 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         novaldark=json.dumps(NOVAL_DARK if r["diverge"] else None),
         legend=(_legend_diverge(span, base) if r["diverge"]
                 else _legend(lo, hi, r["caption"])),
+        legend2=(_legend(s["lo2"], s["hi2"],
+                         "land value per resident of the same ground",
+                         bar="bar2") if s["hasper"] else ""),
+        perhead=json.dumps(bool(s["hasper"])),
         noun=_esc(r["noun"]), colour=r["colour"], notes=r["notes"],
     )
     stem = ("land_vs_output_map" if r["flat"]
@@ -2077,17 +2189,21 @@ def _b64(b):
     return base64.b64encode(zlib.compress(b, 6)).decode("ascii")
 
 
-def _legend(lo, hi, caption):
+def _legend(lo, hi, caption, bar="bar"):
     """A continuous bar with five priced ticks, in dollars per square km."""
     stops = ", ".join(f"{c} {i/(len(RAMP)-1)*100:.0f}%"
                       for i, c in enumerate(RAMP))
     ticks = "".join(
         f'<span>{_money(10 ** (lo + (hi - lo) * f))}</span>'
         for f in (0, 0.25, 0.5, 0.75, 1))
-    return (f'<div class="bar" id="bar" '
+    return (f'<div class="bar" id="{bar}" '
             f'style="background:linear-gradient(90deg,{stops})">'
             f'</div><div class="ticks">{ticks}</div>'
-            f'<div class="cap">{caption}</div>')
+            f'<div class="cap">{caption}'
+            + ('<br><span style="opacity:.8">Grey is ground with no '
+               'resident, where a price per resident would be a division by '
+               'zero.</span>' if bar == "bar2" else "")
+            + '</div>')
 
 
 def _legend_diverge(span, base):
@@ -2143,7 +2259,14 @@ function darkNow() {{
   return t ? t === 'dark' : mq.matches;
 }}
 function RAMP() {{ return darkNow() ? RAMP_DARK : RAMP_LIGHT; }}
-function NOVAL() {{ return darkNow() ? NOVAL_DARK : NOVAL_LIGHT; }}
+// `force` is the per-resident colouring asking for the grey even on a page
+// whose own scale has no sentinel: the two colourings do not have the same
+// gaps, so they do not have the same legend.
+function NOVAL(force) {{
+  const d=darkNow();
+  if(force) return d ? "#4a5058" : "#7d838c";
+  return d ? NOVAL_DARK : NOVAL_LIGHT;
+}}
 // Applied here rather than with the rest of the theme wiring at the foot of
 // the file, because the tiles are coloured on load: read the preference late
 // and the map is built from the wrong scale and has to be repainted, which
@@ -2154,7 +2277,10 @@ try {{
 }} catch(e) {{}}
 const D={data};
 const BORDERS={borders}, METROS={metros}, WATERS={waters}, MBOX={mbox};
-const MUNIS={munis}, HOODS={hoods};
+const MUNIS={munis}, HOODS={hoods}, HASPER={perhead};
+// 0 = land value per square kilometre, 1 = land value per resident.  The two
+// share every vertex; only the byte that indexes the ramp differs.
+let MODE=0;
 const HASCUT={hascut};
 const LABELS={labels}, TOWNS={towns};
 
@@ -2171,11 +2297,13 @@ async function unz(b64) {{
 
 let repaint=()=>{{}};
 function paintLegend() {{
-  const bar=document.getElementById('bar');
-  if(!bar) return;
   const r=RAMP();
-  bar.style.background='linear-gradient(90deg,'
+  const g='linear-gradient(90deg,'
     + r.map((c,i)=>c+' '+(i/(r.length-1)*100).toFixed(0)+'%').join(',') + ')';
+  for(const id of ['bar','bar2']) {{
+    const bar=document.getElementById(id);
+    if(bar) bar.style.background=g;
+  }}
 }}
 const cv=document.getElementById('cv'), stage=document.getElementById('stage');
 // ?shot keeps the drawing buffer around so a headless browser can
@@ -2245,12 +2373,14 @@ const uK=gl.getUniformLocation(prog,'u_k'), uO=gl.getUniformLocation(prog,'u_o')
 const uPick=gl.getUniformLocation(prog,'u_pick');
 
 let view={{k:1,ox:0,oy:0}}, count=0, ready=false, fb=null, ftex=null;
-let TVAL=null, TU=null, TGDP=null;
+let TVAL=null, TU=null, TGDP=null, TU2=null, TPOP=null;
 
 (async function build() {{
   const [vxb, vyb, qb, bb, vb] = await Promise.all(
     [D.vx, D.vy, D.quads, D.u, D.val].map(unz));
   if (D.val2) TGDP = new Uint16Array((await unz(D.val2)).buffer);
+  if (D.u2) TU2 = await unz(D.u2);
+  if (D.pop) TPOP = new Uint32Array((await unz(D.pop)).buffer);
   const vx=new Uint16Array(vxb.buffer), vy=new Uint16Array(vyb.buffer);
   const quads=new Uint32Array(qb.buffer);
   TU=bb; TVAL=new Uint16Array(vb.buffer);
@@ -2262,7 +2392,11 @@ let TVAL=null, TU=null, TGDP=null;
   // 256 shades interpolated between the ramp's stops, so the scale is
   // continuous rather than a staircase.
   function lut() {{
-    const ramp=RAMP(), nov=NOVAL();
+    const ramp=RAMP();
+    // Ground with no resident gets the same grey the ratio map gives ground
+    // with no workplace, and only in the per-resident colouring: the price
+    // map has nothing to leave out.
+    const nov=MODE ? NOVAL(true) : NOVAL();
     const stops=ramp.map(h=>[parseInt(h.slice(1,3),16),
                              parseInt(h.slice(3,5),16),
                              parseInt(h.slice(5,7),16)]);
@@ -2280,8 +2414,9 @@ let TVAL=null, TU=null, TGDP=null;
     return rgb;
   }}
   let rgb=lut();
+  const shade=()=>MODE&&TU2?TU2:TU;
   for(let t=0;t<NT;t++) {{
-    const c=rgb[TU[t]], id=t+1;
+    const c=rgb[shade()[t]], id=t+1;
     const r=(id&255), g=((id>>8)&255), b=((id>>16)&255);
     for(let j=0;j<4;j++) {{
       const v=quads[t*4+j], o=(t*4+j);
@@ -2311,8 +2446,9 @@ let TVAL=null, TU=null, TGDP=null;
   // each index maps to.
   repaint=()=>{{
     rgb=lut();
+    const u=shade();
     for(let t=0;t<NT;t++) {{
-      const c=rgb[TU[t]];
+      const c=rgb[u[t]];
       for(let j=0;j<4;j++) {{
         const o=(t*4+j)*3;
         col[o]=c[0]; col[o+1]=c[1]; col[o+2]=c[2];
@@ -2575,11 +2711,16 @@ value.</p>
   <button id="limits" class="sw" type="button" role="switch"
     aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>city limits</button>
+  <button id="perhead" class="sw" type="button" role="switch"
+    aria-checked="false" title="colour by land value per resident instead of
+    per square kilometre"
+    ><span class="tr"><span class="kn"></span></span>per resident</button>
   <button id="theme" type="button" title="light, dark, or whatever this
     machine is set to">theme: system</button>
   {nav}
 </div>
-<div class="legend">{legend}</div>
+<div class="legend" id="lg1">{legend}</div>
+<div class="legend" id="lg2" hidden>{legend2}</div>
 <p class="notes"><b>What the colour says.</b> {colour}<br><br>
 {notes}</p>
 </div>
@@ -2744,9 +2885,19 @@ stage.addEventListener('pointermove',e=>{{
            `</span>`
          : `<span style="color:var(--muted)">no workplace here &mdash; the `+
            `output is known only by county, so no ratio is drawn</span>`);
+  }} else if(MODE && TPOP) {{
+    const n=TPOP[t];
+    tip.innerHTML=`<b>${{money(v)}}</b> {noun}<br>`+
+      `<b>${{n.toLocaleString()}}</b> resident${{n===1?'':'s'}}<br>`+
+      (n ? `<span style="color:var(--muted)"><b>${{money(v/n)}}</b> of land `+
+           `per resident</span>`
+         : `<span style="color:var(--muted)">nobody lives here, so there is `+
+           `no price per resident to draw</span>`);
   }} else {{
     tip.innerHTML=`<b>${{money(v)}}</b> {noun}<br>`+
-      `<span style="color:var(--muted)">${{money(v/KM2)}} per km&sup2;</span>`;
+      `<span style="color:var(--muted)">${{money(v/KM2)}} per km&sup2;</span>`
+      + (TPOP ? `<br><span style="color:var(--muted)">`+
+         `${{TPOP[t].toLocaleString()}} resident${{TPOP[t]===1?'':'s'}}</span>` : '');
   }}
   tip.style.opacity=1;
   const tw=tip.offsetWidth, th=tip.offsetHeight;
@@ -2924,6 +3075,22 @@ function layerSwitch(btn, layer, has) {{
 }}
 layerSwitch('metros','mb',METROS.length);
 layerSwitch('limits','pb',MUNIS.length);
+
+// The per-resident switch is not a layer: it repaints the tiles that are
+// already there.  Same geometry, same vertices, one different byte per tile
+// through the same ramp -- so it costs a buffer rewrite, not a reload.
+const phb=document.getElementById('perhead');
+if(phb) {{
+  if(!HASPER) phb.style.display='none';
+  else phb.addEventListener('click',()=>{{
+    MODE=MODE?0:1;
+    phb.setAttribute('aria-checked',MODE?'true':'false');
+    const a=document.getElementById('lg1'), b=document.getElementById('lg2');
+    if(a) a.hidden=!!MODE;
+    if(b) b.hidden=!MODE;
+    if(TU2) repaint();
+  }});
+}}
 </script>
 """
 
