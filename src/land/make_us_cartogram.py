@@ -424,9 +424,10 @@ def main(argv):
     pshapes = (muni_bounds(geo, r["flat"], geo["tx"] * geo["side"] / r["nx"])
                if geo["window"] is not None else None)
     pkind = [] if pshapes is None else pshapes.kind.tolist()
+    pname = [] if pshapes is None else pshapes.NAME.tolist()
     # The anchors ride the flow, so changing this count invalidates every
     # cached mesh -- it is raised only when there is something to say.
-    city_name, city_xy = cities(geo, ANCHORS, munis=pshapes)
+    city_name, city_xy = cities(geo, ANCHORS, munis=pshapes, value=value)
     hoods = (_hoods(geo, r["city"], r["citypt"], value)[:HOODS_MAX]
              if r["city"] and geo["clip"] is not None else [])
     n_town = len(city_name)
@@ -499,7 +500,7 @@ def main(argv):
            bidx, postal, names, lab0, real.ravel()[tiles], midx=midx,
            widx=widx, pidx=pidx, n_town=n_town,
            people=(None if people is None else people.ravel()[tiles]),
-           moved2=moved2, moved3=moved3, pkind=pkind,
+           moved2=moved2, moved3=moved3, pkind=pkind, pname=pname,
            mgeo=(mshapes.GEOID.tolist() if mshapes is not None else []))
     return 0
 
@@ -1394,7 +1395,14 @@ ANCHORS = 2000
 SAME_TOWN_KM = 20.0
 
 
-def _muni_labels(munis, geo):
+def _at_tile(geo, value, x, y):
+    """What the tile under a point is worth: a rank for a place with no shape."""
+    ix = int(np.clip((x - geo["x0"]) / geo["side"], 0, geo["tx"] - 1))
+    iy = int(np.clip((geo["y1"] - y) / geo["side"], 0, geo["ty"] - 1))
+    return float(value[iy, ix])
+
+
+def _muni_labels(munis, geo, value):
     """One name and one point for every town that has a boundary drawn.
 
     A line around a town with no name on it is half a fact: the reader can see
@@ -1403,38 +1411,48 @@ def _muni_labels(munis, geo):
     townships are county subdivisions and a place gazetteer does not list
     them at all.
 
-    Population comes from the census-block grid rather than from a table,
-    which is the only way to have one for a township as well as a city, and
-    it is what orders the names so that the reveal rule spends its budget on
-    the ones a reader is looking for.  The point is the boundary's own
-    representative point, so a name sits inside the shape it belongs to even
-    where that shape is a crescent around a bay.
+    What orders the names is the land value of the ground each one covers,
+    which on this map is the same thing as how large it is drawn: area is a
+    tile's share of the money, so a town's share of the money is its share of
+    the page.  Rank and size then agree, and a name arrives when the shape it
+    belongs to is big enough to hold it.
+
+    Ranking by population, which this did first, is the ordering for a
+    different map.  On a metro of twenty million people Sagaponack has three
+    hundred, Sag Harbor two thousand and Bridgehampton seventeen: the whole
+    east end of Long Island sorts below every suburb in Nassau County and is
+    never reached, while the cartogram draws it enormous because the land
+    there is some of the dearest in the country.  A reader looking at the
+    biggest shapes on the page was being told the names of the smallest.
+
+    The point is the boundary's own representative point, so a name sits
+    inside the shape it belongs to even where that shape is a crescent around
+    a bay.
     """
     if munis is None or not len(munis):
         return []
-    pop = np.load(POP_GRID, mmap_mode="r") if POP_GRID.exists() else None
+    side = geo["side"]
+    x0g, y1g = geo["x0"], geo["y1"]
     out = []
     for nm, q in zip(munis.NAME, munis.geometry):
         p = q.representative_point()
-        n = 0.0
-        if pop is not None:
-            x0, y0, x1, y1 = q.bounds
-            c0 = max(int((x0 - GRID["x0"]) / GRID["res"]), 0)
-            r0 = max(int((GRID["y1"] - y1) / GRID["res"]), 0)
-            c1 = min(int((x1 - GRID["x0"]) / GRID["res"]) + 1, GRID["nx"])
-            r1 = min(int((GRID["y1"] - y0) / GRID["res"]) + 1, GRID["ny"])
-            if c1 > c0 and r1 > r0:
-                w = np.asarray(pop[r0:r1, c0:c1], dtype="float64")
-                m = rasterize([(q, 1)], out_shape=w.shape,
-                              transform=from_bounds(
-                                  GRID["x0"] + c0 * GRID["res"],
-                                  GRID["y1"] - r1 * GRID["res"],
-                                  GRID["x0"] + c1 * GRID["res"],
-                                  GRID["y1"] - r0 * GRID["res"],
-                                  c1 - c0, r1 - r0),
-                              fill=0).astype(bool)
-                n = float(w[m].sum())
-        out.append((nm, float(p.x), float(p.y), n))
+        x0, y0, x1, y1 = q.bounds
+        c0 = max(int((x0 - x0g) / side), 0)
+        r0 = max(int((y1g - y1) / side), 0)
+        c1 = min(int((x1 - x0g) / side) + 1, geo["tx"])
+        r1 = min(int((y1g - y0) / side) + 1, geo["ty"])
+        v = 0.0
+        if c1 > c0 and r1 > r0:
+            w = value[r0:r1, c0:c1]
+            m = rasterize([(q, 1)], out_shape=w.shape,
+                          transform=from_bounds(x0g + c0 * side,
+                                                y1g - r1 * side,
+                                                x0g + c1 * side,
+                                                y1g - r0 * side,
+                                                c1 - c0, r1 - r0),
+                          fill=0).astype(bool)
+            v = float(w[m].sum())
+        out.append((nm, float(p.x), float(p.y), v))
     out.sort(key=lambda t: -t[3])
     return out
 
@@ -1467,7 +1485,7 @@ def _one_each(items):
     return kept
 
 
-def cities(geo, n, munis=None):
+def cities(geo, n, munis=None, value=None):
     """Place names, carried through the flow like everything else.
 
     Without them a deformed map is unreadable; with them it is obvious that the
@@ -1494,8 +1512,13 @@ def cities(geo, n, munis=None):
           + (f" over {floor:,.0f} people" if floor else "")
           + " in this cut, named at their largest city")
     if geo["window"] is not None:
-        towns = _muni_labels(munis, geo)
-        gaz = [(nm, x, y, float(pp)) for nm, x, y, pp in _places(geo)]
+        towns = _muni_labels(munis, geo, value)
+        # A gazetteer place has no boundary, so it has no land value of its
+        # own to be ranked by.  It is scored on the tile it stands on times
+        # the median town's tile count, which puts it on the same scale as a
+        # boundary without pretending to an extent it does not have.
+        gaz = [(nm, x, y, _at_tile(geo, value, x, y)) for nm, x, y, _
+               in _places(geo)]
         keep = _one_each([(t[0], t[1], t[2], float("inf")) for t in out]
                          + towns + gaz)[:n]
         add = keep[len(out):]
@@ -1592,16 +1615,30 @@ def cached(key, r, field, extent, pts, quads, tile_value):
     """The flow is the expensive part and the drawing is the part worth
     iterating on, so the transported points are kept on disk.
 
-    The name carries a digest of the density field as well as the settings.
+    The name carries a digest of the density field *and of the points* as well
+    as the settings.  Both were learned the hard way.
+
     Matching on shape alone was not enough: rebuilding the GDP surface with a
     different allocation leaves the same tiles occupied and the same number of
     vertices, so a stale mesh would have been served silently for a density it
-    was never solved against.
+    was never solved against.  That is what the field digest is for.
+
+    Hashing the field alone was not enough either, and this one is worse
+    because it is silent and looks right.  The points carry the label anchors,
+    and changing the order the anchors are ranked in changes which town is at
+    which index without changing how many there are.  The shape matched, the
+    field was untouched, the cache was reused -- and every name was drawn at
+    some other town's position.  Southampton stayed on the east end of Long
+    Island and Bridgehampton went to Jersey City.  So the points are hashed
+    too, and any change to what a point *is*, not just how many there are,
+    forces the solve again.
     """
     CACHE.mkdir(parents=True, exist_ok=True)
     k = r["mesh"] or key
     h = hashlib.blake2b(np.ascontiguousarray(field, dtype="<f8").tobytes(),
                         digest_size=6).hexdigest()
+    h += hashlib.blake2b(np.ascontiguousarray(pts, dtype="<f8").tobytes(),
+                         digest_size=6).hexdigest()
     f = CACHE / f"{k}_b{r['block']}_n{r['nx']}_p{r['passes']}_s{STEPS}_{h}.npy"
     if f.exists():
         moved = np.load(f)
@@ -1679,7 +1716,7 @@ def _named_boxes(mbox, mgeo):
 def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
            lab0, real, tile_value, areas, midx=(), widx=(), mgeo=(),
            pidx=(), n_town=None, people=None, moved2=None, moved3=None,
-           pkind=()):
+           pkind=(), pname=()):
     """Everything both pages need: the drawing box, the colours, the payload.
 
     The document figure and the scrolled story draw the same tiles with the
@@ -1884,13 +1921,24 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
         # Two lists, because the two are drawn differently: a solid line is a
         # government and a dotted one is a settlement the Census names and
         # nobody governs.
-        munis, cdps = [], []
+        munis, cdps, tbox = [], [], {}
         for i, start, n in pidx:
             ring = to_px(mv[start:start + n])
             if len(ring) < 4:
                 continue
             d = "M" + "L".join(f"{x:.3f},{y:.3f}" for x, y in ring) + "Z"
             (cdps if pkind[i] == "cdp" else munis).append(d)
+            # The extent of the town as the flow left it, so that searching
+            # one frames the town rather than dropping a pin in it at some
+            # arbitrary zoom.  A cartogram is exactly the case where the
+            # reader cannot guess how big a place has become.
+            rlo, rhi = ring.min(0), ring.max(0)
+            nm = pname[i] if i < len(pname) else None
+            if nm:
+                b = tbox.get(nm)
+                tbox[nm] = ([rlo[0], rlo[1], rhi[0], rhi[1]] if b is None else
+                            [min(b[0], rlo[0]), min(b[1], rlo[1]),
+                             max(b[2], rhi[0]), max(b[3], rhi[1])])
         codes, lp = _drawn_anchors(big, postal)
         cp = to_px(mv[lab0:])
         tp, hp = cp[:n_town], cp[n_town:]
@@ -1911,6 +1959,7 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
         return dict(
             borders=borders, metros=metros, waters=waters, munis=munis,
             cdps=cdps,
+            tbox={k: [round(float(v), 1) for v in b] for k, b in tbox.items()},
             mbox=_named_boxes(mbox, mgeo),
             labels=[[q, round(float(x), 1), round(float(y), 1), k]
                     for (q, (x, y)), k in zip(zip(codes, lp),
@@ -1933,6 +1982,7 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
                 two=B is not None, A=A, B=B, C=C,
                 borders=A["borders"], metros=A["metros"], waters=A["waters"],
                 munis=A["munis"], cdps=A["cdps"], mbox=A["mbox"],
+                tbox=A["tbox"],
                 labels=A["labels"],
                 towns=A["towns"], hoods=A["hoods"],
                 still=(still_px, still_quads, still_u))
@@ -2220,7 +2270,7 @@ def still(path, px, quads, u, W, H):
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
            postal, city_name, lab0, real, midx=(), widx=(), mgeo=(),
            pidx=(), n_town=None, people=None, moved2=None, moved3=None,
-           pkind=()):
+           pkind=(), pname=()):
     FIG.mkdir(parents=True, exist_ok=True)
     tile_value = value.ravel()[tiles]
     areas = _areas(moved, quads)
@@ -2253,7 +2303,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
                city_name, lab0, real, tile_value, areas, midx=midx,
                widx=widx, mgeo=mgeo, pidx=pidx, n_town=n_town,
                people=people, moved2=moved2, moved3=moved3,
-               pkind=pkind)
+               pkind=pkind, pname=pname)
     W, H = s["W"], s["H"]
     base, span, lo, hi = s["base"], s["span"], s["lo"], s["hi"]
     draw, payload, borders = s["draw"], s["payload"], s["borders"]
@@ -2352,6 +2402,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         km2=f"{side*side:.6f}",
         metros=json.dumps(s["metros"]), waters=json.dumps(s["waters"]),
         munis=json.dumps(s["munis"]), cdps=json.dumps(s["cdps"]),
+        tbox=json.dumps(s["tbox"]), iscut=json.dumps(r["window"] is not None),
         hoods=json.dumps(s["hoods"]),
         mbox=json.dumps(s["mbox"]),
         alt=json.dumps(s["B"]), flatgeo=json.dumps(s["C"]),
@@ -2482,6 +2533,11 @@ try {{
 const D={data};
 const BORDERS={borders}, METROS={metros}, WATERS={waters}, MBOX={mbox};
 const MUNIS={munis}, CDPS={cdps}, HOODS={hoods}, HASPER={perhead};
+// A cut of one metro searches the towns inside it; the national map searches
+// the metros.  The word in the box has to say which, because "find a metro
+// area" on a page that is one metro area is an invitation to type the name of
+// the page you are already on.
+const TBOX={tbox}, ISCUT={iscut};
 // The same tiles under a second flow, where area is people rather than money.
 // Null on a cut that has no population layer.
 const ALT={alt}, FLATGEO={flatgeo};
@@ -2528,9 +2584,9 @@ const tip=document.getElementById('tip'), hud=document.getElementById('hud');
 // Everything above the tiles belongs to the mesh that carried it, so the
 // whole overlay is rebuilt when the map switches flows rather than left
 // sitting over ground that has moved out from under it.
-let MBOXNOW=MBOX;
+let MBOXNOW=MBOX, TBOXNOW=TBOX;
 function paintOverlay(m) {{
-  MBOXNOW=m.mbox;
+  MBOXNOW=m.mbox; TBOXNOW=m.tbox||{{}};
   document.getElementById('bd').innerHTML =
     m.borders.map(d=>`<path class="sb" d="${{d}}"/>`).join('');
   const _wt=document.getElementById('wt');
@@ -2876,13 +2932,14 @@ svg.ov {{ pointer-events:none; }}
 .pr {{ fill:none; stroke:var(--mapline); stroke-opacity:.72; stroke-width:1.2;
   vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 /* A census designated place: a settlement the Census draws a line around so
-   it can count it, with no government inside.  Dotted and fainter than a
-   jurisdiction, because the difference between "this is where the town of
-   Islip ends" and "this is roughly what people mean by Commack" is a real one
-   and the map should carry it rather than leave the reader to know it. */
-.cd {{ fill:none; stroke:var(--mapline); stroke-opacity:.42; stroke-width:1.0;
-  stroke-dasharray:1.5 3; vector-effect:non-scaling-stroke;
-  stroke-linejoin:round; stroke-linecap:round; }}
+   it can count it, with no government inside.  It was dashed, to hold that
+   difference in the ink.  On Long Island, where almost every town is one,
+   a whole island of dashes read as noise rather than as a distinction, and
+   the line a reader wants to follow is the one they could not.  So: solid,
+   and a shade lighter than a jurisdiction, which keeps the difference for
+   anyone looking for it without spending the whole map on it. */
+.cd {{ fill:none; stroke:var(--mapline); stroke-opacity:.62; stroke-width:1.1;
+  vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 /* Water, on a cartogram, has been squeezed to almost nothing -- that is what
    the flow does to ground worth nothing.  Drawn as a thin dark line it is
    still legible as the East River, which is what tells Manhattan from
@@ -2958,7 +3015,7 @@ value.</p>
      took the click with it; outside, a button is just a button. -->
 <div class="ctl">
   <span class="find"><input id="find" type="search" autocomplete="off"
-      spellcheck="false" placeholder="find a metro area" role="combobox"
+      spellcheck="false" placeholder="find a place" role="combobox"
       aria-expanded="false" aria-autocomplete="list" aria-controls="hits"
     ><ul id="hits" role="listbox" hidden></ul></span>
   <button id="reset" type="button">reset view</button>
@@ -3225,7 +3282,7 @@ mq.addEventListener('change',()=>{{
 const fbox=document.getElementById('find'), hits=document.getElementById('hits');
 let hitList=[], hitAt=-1;
 function goTo(t) {{
-  const b=MBOXNOW[t[0]];
+  const b=MBOXNOW[t[0]] || TBOXNOW[t[0]];
   if(b) {{
     // Frame the metropolitan area itself, which is what was asked for and the
     // only honest answer on a cartogram: Miami and Bakersfield are not the
@@ -3273,7 +3330,9 @@ function showHits() {{
   }}
   hitList=starts.concat(has).slice(0,8);
   if(!hitList.length) {{
-    hits.innerHTML='<li aria-disabled="true"><i>no metro of that name</i></li>';
+    hits.innerHTML='<li aria-disabled="true"><i>'
+      + (ISCUT ? 'no town of that name in this metro' : 'no metro of that name')
+      + '</i></li>';
     hits.hidden=false; fbox.setAttribute('aria-expanded','true');
     placeHits();
     return;
@@ -3300,6 +3359,7 @@ function pick(i) {{
   }}
   goTo(t);
 }}
+fbox.placeholder = ISCUT ? 'find a town' : 'find a metro area';
 fbox.addEventListener('input',showHits);
 fbox.addEventListener('focus',showHits);
 fbox.addEventListener('keydown',e=>{{
@@ -3343,9 +3403,13 @@ layerSwitch('limits','pb',MUNIS.length+CDPS.length);
 // are separate because the useful combinations are not a single sequence: a
 // reader may want the per-resident colour on undeformed ground, which is the
 // only view where the eye can compare two places acre for acre.
+// Every key paintOverlay reads has to be here, including tbox: it assigns
+// `m.tbox||{{}}`, so a scene that omits it does not leave the old boxes alone,
+// it empties them -- and searching a town then fell back to a fixed zoom that
+// looked deliberate.
 const SCENE0={{borders:BORDERS, waters:WATERS, munis:MUNIS, cdps:CDPS,
                metros:METROS, labels:LABELS, hoods:HOODS, towns:TOWNS,
-               mbox:MBOX}};
+               mbox:MBOX, tbox:TBOX}};
 let FLAT=false;
 
 function applyView() {{
