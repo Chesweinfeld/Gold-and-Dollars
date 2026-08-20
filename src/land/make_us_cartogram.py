@@ -94,10 +94,10 @@ MIN_METRO = 800_000
 # two maps are the same tiles and can be divided by each other.
 GRID = dict(x0=-2357205.0, y1=3173925.0, res=480.0, nx=9618, ny=6054)
 
-_LAND_NOTE = """<b>Limits.</b> The values are model predictions, not sales, and
-are least reliable where sales are thinnest. They price land only, not the
-buildings on it. Every acre is included, including ground with no market: the
-model puts $1.04m per km&sup2; on the interior of Yellowstone, and that is in
+_LAND_NOTE = """<b>Limits.</b> These are model predictions, not sales, and
+they are weakest where sales are thinnest. They price the land, not the
+buildings on it. Every acre counts, including ground no one trades: the model
+puts $1.04m per km&sup2; on the interior of Yellowstone, and that sum is in
 this total."""
 
 _GDP_NOTE = """<b>Limits.</b> GDP is measured by county and nothing finer, so
@@ -178,10 +178,9 @@ over a flow gives units of years, and the land model compresses the top of the
 price distribution, so the ratio understates how dear the most expensive ground
 really is. This is a comparison of two maps, not a measured statistic."""
 
-_TAIL = """ The source stops at the conterminous states, so Alaska and Hawaii
-are absent, and a cartogram equalises density only approximately: this one is
-drawn to within 6.9% of each tile&rsquo;s share of the total, checked on every
-build."""
+_TAIL = """ The source covers the conterminous states only; Alaska and Hawaii
+are absent. A cartogram equalises density approximately. Each build checks
+this one against every tile&rsquo;s share of the total."""
 
 # Named cuts.  The national maps trade resolution for extent; the metro cuts
 # run at 480 m, which is where "parcel level" stops being a figure of speech --
@@ -355,26 +354,24 @@ _SRC_NAMES = (f"Cities: Census metropolitan areas over {MIN_METRO:,.0f} "
               "people (ACS 2023), at their largest place.")
 
 _SRC_LIMITS = ('Town lines: Census incorporated places, county subdivisions '
-               'and census designated places, 2023 cartographic boundaries '
-               'at 1:500,000. <b>Solid</b> is a government &mdash; a city, a '
-               'village, or one of the towns and townships that govern in '
-               'twenty states, which is what draws the towns of New England '
-               'and New York and the townships of New Jersey, Pennsylvania '
-               'and the Midwest. <b>Dotted</b> is a census designated place: '
-               'a settlement the Census draws a line around so it can count '
-               'it, with no government inside. Most of Long Island is '
-               'dotted. The statistical townships of the thirty states where '
-               'a township governs nothing are not drawn at all.')
-_SRC_POP = ('Residents: the 2020 Census of Population and Housing, counted '
-            'by census block &mdash; the finest unit the count is published '
-            'for, and a headcount rather than a model. The median occupied '
+               'and census designated places, 2023 boundaries at 1:500,000. '
+               'A <b>heavier</b> line is a government: a city, a village, or '
+               'one of the towns and townships that govern in twenty states. '
+               'That second file draws the towns of New England and New York '
+               'and the townships of New Jersey, Pennsylvania and the '
+               'Midwest. A <b>lighter</b> line is a census designated place, '
+               'which the Census draws around a settlement in order to count '
+               'it. No government sits inside one, and most of Long Island '
+               'is one. Statistical townships, in the thirty states where a '
+               'township governs nothing, are not drawn.')
+_SRC_POP = ('Residents: the 2020 Census, counted by census block, which is '
+            'the finest unit the count is published for. The median occupied '
             'block is 0.031 km&sup2;, seven times smaller than a 480 m tile. '
-            'It is reported per tile on hover, and nothing on the page is '
-            'divided by it.')
+            'Shown per tile on hover.')
 _SRC_HOODS = ('Neighbourhoods: OpenStreetMap contributors, '
               '<a href="https://www.openstreetmap.org/copyright">ODbL</a>. '
-              'No official dataset of American neighbourhoods exists; these '
-              'are the names people who live there have written down.')
+              'No official dataset of American neighbourhoods exists. These '
+              'are the names residents have recorded.')
 
 PROVENANCE = {
     "land": _SRC_LAND + " " + _SRC_NAMES,
@@ -1819,11 +1816,19 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     # the mesh they were carried by.  One function, called once per mesh,
     # rather than two copies that can drift apart.
     def place(mv):
-        borders, big = [], {}
+        borders, big, sbb = [], {}, {}
         for i, start, n in bidx:
             ring = to_px(mv[start:start + n])
             if len(ring) < 4:
                 continue
+            # Every ring of a state, not just its largest: the extent of the
+            # whole thing as the flow left it, so the page can tell whether a
+            # state is on screen even when its name is not.
+            rlo, rhi = ring.min(0), ring.max(0)
+            b = sbb.get(i)
+            sbb[i] = ([rlo[0], rlo[1], rhi[0], rhi[1]] if b is None else
+                      [min(b[0], rlo[0]), min(b[1], rlo[1]),
+                       max(b[2], rhi[0]), max(b[3], rhi[1])])
             # Keep each state's largest drawn ring, to hang its name on below.
             a = 0.5 * abs(float(np.dot(ring[:, 0], np.roll(ring[:, 1], -1))
                                 - np.dot(ring[:, 1], np.roll(ring[:, 0], -1))))
@@ -1885,6 +1890,8 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
                             [min(b[0], rlo[0]), min(b[1], rlo[1]),
                              max(b[2], rhi[0]), max(b[3], rhi[1])])
         codes, lp = _drawn_anchors(big, postal)
+        sbox = {postal[i]: [round(float(v), 1) for v in b]
+                for i, b in sbb.items() if i < len(postal)}
         cp = to_px(mv[lab0:])
         tp, hp = cp[:n_town], cp[n_town:]
         tname, hname = city_name[:n_town], city_name[n_town:]
@@ -1905,6 +1912,7 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
             borders=borders, metros=metros, waters=waters, munis=munis,
             cdps=cdps,
             tbox={k: [round(float(v), 1) for v in b] for k, b in tbox.items()},
+            sbox=sbox,
             mbox=_named_boxes(mbox, mgeo),
             labels=[[q, round(float(x), 1), round(float(y), 1), k]
                     for (q, (x, y)), k in zip(zip(codes, lp),
@@ -1926,7 +1934,7 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
                 A=A, C=C,
                 borders=A["borders"], metros=A["metros"], waters=A["waters"],
                 munis=A["munis"], cdps=A["cdps"], mbox=A["mbox"],
-                tbox=A["tbox"],
+                tbox=A["tbox"], sbox=A["sbox"],
                 labels=A["labels"],
                 towns=A["towns"], hoods=A["hoods"],
                 still=(still_px, still_quads, still_u))
@@ -2343,7 +2351,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
               f"measured in years. {len(draw):,d} tiles covering "
               f"{_esc(r['where'])}, holding {money} of land value."
               if r["flat"] else
-              f"Every square is the same {side:.2f} km of real ground; its "
+              f"Every square is the same {side:.2f} km of real ground. Its "
               f"size on the page is its share of the {money} of "
               f"{_esc(r['quantity'])} in {_esc(r['where'])}. {len(draw):,d} "
               f"tiles." + (" The colour is one number: what the land in that "
@@ -2355,7 +2363,8 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         km2=f"{side*side:.6f}",
         metros=json.dumps(s["metros"]), waters=json.dumps(s["waters"]),
         munis=json.dumps(s["munis"]), cdps=json.dumps(s["cdps"]),
-        tbox=json.dumps(s["tbox"]), iscut=json.dumps(r["window"] is not None),
+        tbox=json.dumps(s["tbox"]), sbox=json.dumps(s["sbox"]),
+        iscut=json.dumps(r["window"] is not None),
         hoods=json.dumps(s["hoods"]),
         mbox=json.dumps(s["mbox"]),
         flatgeo=json.dumps(s["C"]),
@@ -2481,6 +2490,11 @@ const MUNIS={munis}, CDPS={cdps}, HOODS={hoods};
 // area" on a page that is one metro area is an invitation to type the name of
 // the page you are already on.
 const TBOX={tbox}, ISCUT={iscut};
+// The drawn extent of each state, so a state that is on the page can keep its
+// name on the page.  A name anchored at the middle of New Jersey leaves the
+// screen as soon as a reader zooms into the corner of it by the Hudson, and
+// the state is still all around them.
+const SBOX={sbox};
 // The same tiles undeformed: where the ground actually is.
 const FLATGEO={flatgeo};
 // Which geometry is drawn: the land-value cartogram, or the ground undeformed.
@@ -2519,9 +2533,9 @@ const tip=document.getElementById('tip'), hud=document.getElementById('hud');
 // Everything above the tiles belongs to the mesh that carried it, so the
 // whole overlay is rebuilt when the map switches flows rather than left
 // sitting over ground that has moved out from under it.
-let MBOXNOW=MBOX, TBOXNOW=TBOX;
+let MBOXNOW=MBOX, TBOXNOW=TBOX, SBOXNOW=SBOX;
 function paintOverlay(m) {{
-  MBOXNOW=m.mbox; TBOXNOW=m.tbox||{{}};
+  MBOXNOW=m.mbox; TBOXNOW=m.tbox||{{}}; SBOXNOW=m.sbox||{{}};
   document.getElementById('bd').innerHTML =
     m.borders.map(d=>`<path class="sb" d="${{d}}"/>`).join('');
   const _wt=document.getElementById('wt');
@@ -2541,7 +2555,8 @@ function paintOverlay(m) {{
     m.metros.map(d=>`<path class="mrc" d="${{d}}"/>`).join('')
     + m.metros.map(d=>`<path class="mr" d="${{d}}"/>`).join('');
   document.getElementById('lb').innerHTML =
-    m.labels.map(l=>`<text class="sl" data-k="${{l[3]}}" x="${{l[1]}}" `+
+    m.labels.map(l=>`<text class="sl" data-k="${{l[3]}}" data-s="${{l[0]}}" `+
+      `data-x="${{l[1]}}" data-y="${{l[2]}}" x="${{l[1]}}" `+
       `y="${{l[2]}}">${{l[0]}}</text>`).join('');
   // Each place carries the zoom at which it appears, worked out in
   // _label_zoom() from where the flow actually put it.  Deriving it here from
@@ -2771,7 +2786,11 @@ canvas, svg.ov {{ position:absolute; inset:0; width:100%; height:100%; }}
    either theme: black lines over a dimmed dark map would be invisible. */
 canvas {{ opacity:.74; }}
 svg.ov {{ pointer-events:none; }}
-.sb {{ fill:none; stroke:var(--mapline); stroke-opacity:.62; stroke-width:.9;
+/* Three weights, heaviest first: a state line, then a city limit, then a
+   census place.  It ran the other way round -- the state border was thinner
+   and fainter than the city limits crossing it -- which inverts the thing a
+   reader uses the lines for. */
+.sb {{ fill:none; stroke:var(--mapline); stroke-opacity:.9; stroke-width:2.2;
   vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 /* State codes are orientation, not content: they should be findable when the
    eye goes looking and invisible when it is reading the tiles.  The city names
@@ -2867,7 +2886,7 @@ svg.ov {{ pointer-events:none; }}
    the line a reader wants to follow is the one they could not.  So: solid,
    and a shade lighter than a jurisdiction, which keeps the difference for
    anyone looking for it without spending the whole map on it. */
-.cd {{ fill:none; stroke:var(--mapline); stroke-opacity:.62; stroke-width:1.1;
+.cd {{ fill:none; stroke:var(--mapline); stroke-opacity:.5; stroke-width:1.0;
   vector-effect:non-scaling-stroke; stroke-linejoin:round; }}
 /* Water, on a cartogram, has been squeezed to almost nothing -- that is what
    the flow does to ground worth nothing.  Drawn as a thin dark line it is
@@ -3004,8 +3023,31 @@ function draw() {{
     t.style.fontSize=(11*fit*s)+'px'; t.style.strokeWidth=(2.6*fit*s)+'px';
   }}
   const kEff0=view.k*(rect.width>=240 ? rect.width/1100 : 1);
-  for(const t of document.querySelectorAll('.sl'))
+  // The window on the map, in the same units the labels are placed in.
+  const vx0=-view.ox/view.k, vy0=-view.oy/view.k;
+  const vx1=(W-view.ox)/view.k, vy1=(H-view.oy)/view.k;
+  const pad=26/view.k;      // keep the name off the very edge of the frame
+  for(const t of document.querySelectorAll('.sl')) {{
     t.style.display = kEff0 >= +t.dataset.k ? '' : 'none';
+    // A state name is anchored at the middle of the state, which is the right
+    // place until the reader zooms into a corner of it -- then the name is
+    // off the screen and the state is still all around them.  So the name
+    // slides to stay inside the frame for as long as any of its ground is,
+    // and goes back to the middle the moment the whole state is in view.
+    const b=SBOXNOW[t.dataset.s];
+    if(!b) continue;
+    const x=+t.dataset.x, y=+t.dataset.y;
+    if(b[2]<vx0 || b[0]>vx1 || b[3]<vy0 || b[1]>vy1) {{
+      t.style.display='none';           // none of this state is on the page
+      continue;
+    }}
+    const cx=Math.min(Math.max(x, Math.max(vx0, b[0])+pad),
+                      Math.min(vx1, b[2])-pad);
+    const cy=Math.min(Math.max(y, Math.max(vy0, b[1])+pad),
+                      Math.min(vy1, b[3])-pad);
+    t.setAttribute('x', isFinite(cx) ? cx : x);
+    t.setAttribute('y', isFinite(cy) ? cy : y);
+  }}
   for(const t of document.querySelectorAll('.tn')) {{
     t.style.fontSize=(12*fit*s)+'px'; t.style.strokeWidth=(3.5*fit*s)+'px';
   }}
@@ -3023,8 +3065,36 @@ function draw() {{
   // sized.  Falling back to the plain zoom there matters: scaling by a width
   // of 2 sends the test to zero and hides every label on the map.
   const kEff=view.k*(rect.width>=240 ? rect.width/1100 : 1);
-  for(const g of document.querySelectorAll('.tg'))
-    g.style.display = kEff >= +g.dataset.k ? '' : 'none';
+  // The state codes are placed last and move with the frame, so a town name
+  // cannot be held clear of them when it is laid out.  It is settled here
+  // instead: a handful of state labels, measured once, and every town name
+  // that lands under one gives way.  The state code is the coarser fact and
+  // the one a reader is using to orient, so it wins.
+  // Only once the stage has a real width.  Measured before the layout has
+  // settled it reports two pixels, every town lands on the same point, and
+  // the test hides all six hundred of them -- the same trap the zoom rule
+  // above guards against, for the same reason.
+  const sr = rect.width < 240 ? [] :
+    [...document.querySelectorAll('.sl')]
+      .filter(t=>t.style.display!=='none')
+      .map(t=>t.getBoundingClientRect());
+  const kx=rect.width/W, ky=rect.height/H;
+  for(const g of document.querySelectorAll('.tg')) {{
+    if(kEff < +g.dataset.k) {{ g.style.display='none'; continue; }}
+    g.style.display='';
+    if(!sr.length) continue;
+    const tx=g.querySelector('text');
+    if(!tx) continue;
+    const x=(+tx.getAttribute('x')*view.k+view.ox)*kx+rect.left;
+    const y=(+tx.getAttribute('y')*view.k+view.oy)*ky+rect.top;
+    const hw=tx.textContent.length*6.4*fit/2+3, hh=14*fit/2+2;
+    for(const b of sr) {{
+      if(x+hw>b.left && x-hw<b.right && y+hh>b.top && y-hh<b.bottom) {{
+        g.style.display='none';
+        break;
+      }}
+    }}
+  }}
   hud.textContent=view.k.toFixed(1)+'x';
   pickDirty=true;
 }}
@@ -3323,7 +3393,7 @@ layerSwitch('limits','pb',MUNIS.length+CDPS.length);
 // looked deliberate.
 const SCENE0={{borders:BORDERS, waters:WATERS, munis:MUNIS, cdps:CDPS,
                metros:METROS, labels:LABELS, hoods:HOODS, towns:TOWNS,
-               mbox:MBOX, tbox:TBOX}};
+               mbox:MBOX, tbox:TBOX, sbox:SBOX}};
 let FLAT=false;
 
 function applyView() {{
@@ -3334,10 +3404,10 @@ function applyView() {{
   reflow(GEOM);
   const note=document.getElementById('areanote');
   if(note) note.textContent = GEOM===2
-    ? 'Area is real ground \u2014 nothing here is distorted, so area carries '
-      + 'no meaning and only the colour does.'
-    : 'Area is land value: every tile is the same patch of real ground drawn '
-      + 'at its share of the money.';
+    ? 'Area is real ground. Nothing is distorted here, so area carries no '
+      + 'meaning and the colour does all the work.'
+    : 'Area is land value. Every tile is the same patch of real ground, '
+      + 'drawn at its share of the money.';
   hud.textContent=view.k.toFixed(1)+'x';
 }}
 
