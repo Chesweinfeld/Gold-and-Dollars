@@ -651,6 +651,17 @@ RATIO_BOX = 5
 PER_CLAMP = [5, 95]
 
 
+def place_of(r):
+    """What the per-resident figure is divided by, in words.
+
+    The metro cuts divide by the town a tile stands in and the national map
+    by the ground within 19 km, and the page has to say which -- it said
+    "the town it stands in" on a map that draws no towns at all.
+    """
+    return ("the town it stands in" if r["window"] is not None
+            else "the ground within 19 km")
+
+
 def per_resident(value, people, geo, munis=None):
     """Land value per resident, as a quantity a cartogram can actually sum.
 
@@ -2542,8 +2553,9 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         legend=(_legend_diverge(span, base) if r["diverge"]
                 else _legend(lo, hi, r["caption"])),
         legend2=(_legend(s["lo2"], s["hi2"],
-                         "land value per resident of the town it stands in",
+                         f"land value per resident of {place_of(r)}",
                          bar="bar2") if s["hasper"] else ""),
+        placeof=json.dumps(place_of(r)),
         perhead=json.dumps(bool(s["hasper"])),
         noun=_esc(r["noun"]), colour=r["colour"], notes=r["notes"],
     )
@@ -2663,7 +2675,7 @@ const MUNIS={munis}, CDPS={cdps}, HOODS={hoods}, HASPER={perhead};
 // the metros.  The word in the box has to say which, because "find a metro
 // area" on a page that is one metro area is an invitation to type the name of
 // the page you are already on.
-const TBOX={tbox}, ISCUT={iscut};
+const TBOX={tbox}, ISCUT={iscut}, PLACEOF={placeof};
 // The same tiles under a second flow, where area is people rather than money.
 // Null on a cut that has no population layer.
 const ALT={alt}, FLATGEO={flatgeo};
@@ -3338,9 +3350,8 @@ stage.addEventListener('pointermove',e=>{{
     tip.innerHTML=`<b>${{money(v)}}</b> {noun}<br>`+
       `<b>${{n.toLocaleString()}}</b> resident${{n===1?'':'s'}} on this tile<br>`+
       `<span style="color:var(--muted)">the colour is the land value per `+
-      `resident of the town this tile stands in, not of the tile: one `+
-      `tile\u2019s handful of people is too small a denominator to divide `+
-      `by</span>`;
+      `resident of ${{PLACEOF}}, not of the tile: one tile\u2019s handful of `+
+      `people is too small a denominator to divide by</span>`;
   }} else {{
     tip.innerHTML=`<b>${{money(v)}}</b> {noun}<br>`+
       `<span style="color:var(--muted)">${{money(v/KM2)}} per km&sup2;</span>`
@@ -3559,10 +3570,11 @@ function applyView() {{
     : g===1
     ? 'Area is land value per resident: a town whose land is worth more per '
       + 'person living in it is drawn larger. Ratios do not add up, so a '
-      + 'town\u2019s tiles are each given its value over its own population '
-      + '\u2014 which is what makes them sum to the ratio and not to the '
-      + 'ratio times the size of the town. The total area still means '
-      + 'nothing; the comparison between two places does.'
+      + 'place\u2019s tiles are each given its value over its own '
+      + 'population \u2014 which is what makes them sum to the ratio and not '
+      + 'to the ratio times the size of the place. The place is '
+      + PLACEOF + '. The total area still means nothing; the comparison '
+      + 'between two places does.'
     : 'Area is land value: every tile is the same patch of real ground drawn '
       + 'at its share of the money.';
   hud.textContent=view.k.toFixed(1)+'x';
