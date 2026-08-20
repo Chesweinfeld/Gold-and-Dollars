@@ -464,32 +464,48 @@ def main(argv):
     #
     # It is worth being plain about what that costs.  Area on the price map is
     # a share of a total and the shares add to one.  Area here is a ratio, and
-    # ratios do not add: the page is honest about which places carry more
-    # land value per resident than which, and its total area means nothing at
-    # all.  The figure
-    # says so rather than leaving it to be inferred.
+    # ratios do not add: the page is honest about which places carry more land
+    # value per resident than which, and its total area means nothing at all.
+    # The figure says so rather than leaving it to be inferred.
     moved2 = None
+    perres = None
     if people is not None and not r["flat"]:
-        pv = people.ravel()[tiles]
+        # The national map draws no town lines, and at 3.84 km a town is
+        # smaller than a tile anyway, so the place there is the county --
+        # the same idea at the only scale the page can carry.
+        places = pshapes if pshapes is not None else _counties(geo)
+        perweight, perres = per_resident(value, people, geo, places)
+        pr = perweight.ravel()[tiles]
         tv = value.ravel()[tiles]
-        live = pv > 0
-        per = np.zeros_like(tv)
-        per[live] = tv[live] / pv[live]
-        # Ground with nobody on it has no price per resident at all -- it is a
-        # division by zero, not a very large number -- so it cannot be drawn
-        # at its "value".  It is held at the bottom of the scale and shrinks,
-        # exactly as the output map holds land that produces nothing, and it
-        # is the same ground the colour leaves grey.
-        floor = np.percentile(per[live], 1) if live.any() else 1.0
-        held = np.where(live, per, floor)
-        per_grid = np.zeros(value.size)
-        per_grid[tiles] = held
-        e2, f2 = solver_field(per_grid.reshape(value.shape), geo, r["nx"])
+        live = pr > 0
+        # Clamped to the same window the colour uses, so a tile drawn at the
+        # top of the ramp is drawn at the top of the flow and neither can run
+        # away.  Ground with nobody near it has no ratio at all -- a division
+        # by zero, not a large number -- and is held at the bottom, which is
+        # the same ground the colour leaves grey.
+        lp = np.log10(np.maximum(pr[live], 1.0))
+        c_lo, c_hi = (10 ** q for q in _wpct(lp, tv[live], PER_CLAMP))
+        held = np.where(live, np.clip(pr, c_lo, c_hi), c_lo)
+        grid = np.zeros(value.size)
+        grid[tiles] = held
+        e2, f2 = solver_field(grid.reshape(value.shape), geo, r["nx"])
+        # Not dollars per resident: this is the weight a tile carries into
+        # the flow, its own land value over its town's population, and a
+        # town's weights sum to its dollars per resident.  Printing it with a
+        # dollar sign would invite the reader of the log to compare it with
+        # the colour scale, which is a different number.
         print(f"\n  a second flow, on land value per resident: "
-              f"{int(live.sum()):,d} of {len(pv):,d} drawn tiles have a "
-              f"resident; the rest have no ratio and are held at "
-              f"${floor:,.0f} so they shrink rather than tear the sheet")
-        moved2 = cached(key + "-per", r, f2, e2, pts, quads, held)
+              f"{int(live.sum()):,d} of {len(pr):,d} drawn tiles carry a "
+              f"weight, clamped to the 5th-95th percentile, which leaves the "
+              f"flow a range of {c_hi / c_lo:,.0f}-fold to span")
+        # One pass, not three, for the reason _cut already gives for the
+        # output map: relaxation feeds the deformed map back as the next
+        # density, which helps a field that varies smoothly and hurts one
+        # that stands in spikes.  Even smoothed this field is the second
+        # kind, and the passes made it worse -- 30.0%, then 31.2%, then
+        # 33.6%.  Three passes of diverging is worse than one.
+        moved2 = cached(key + "-per", dict(r, passes=1), f2, e2, pts, quads,
+                        held)
 
     # The third geometry costs no solve at all: it is where the ground
     # actually is, which is what `pts` already holds before any flow touched
@@ -500,6 +516,7 @@ def main(argv):
            bidx, postal, names, lab0, real.ravel()[tiles], midx=midx,
            widx=widx, pidx=pidx, n_town=n_town,
            people=(None if people is None else people.ravel()[tiles]),
+           perres=(None if perres is None else perres.ravel()[tiles]),
            moved2=moved2, moved3=moved3, pkind=pkind, pname=pname,
            mgeo=(mshapes.GEOID.tolist() if mshapes is not None else []))
     return 0
@@ -625,6 +642,109 @@ def pop_tiles(geo, block):
     w = np.asarray(g[row0:row0 + ty * block, col0:col0 + tx * block],
                    dtype=np.float64)
     return w.reshape(ty, block, tx, block).sum(axis=(1, 3))
+
+
+# The window a per-resident figure is computed over, in tiles.  Five of them
+# is 2.4 km across.
+RATIO_BOX = 5
+# Where the per-resident scale is cut, in weighted percentiles.  Wider than
+# the colour's 2nd-to-99.5th on purpose: at the very ends sit townships of a
+# dozen people, whose ratio is a statement about the denominator, and left in
+# they take the page.  At 5 and 95 the range is 2,395-fold and the ordering of
+# towns still holds at 0.89.
+PER_CLAMP = [5, 95]
+
+
+def _counties(geo):
+    """County outlines clipped to the cut, as the national map's places."""
+    g = gpd.read_file(
+        f"zip://{IN / 'cb_2023_us_county_500k.zip'}").to_crs(ALBERS)
+    box = _clipbox(geo)
+    g = g[g.intersects(box)].copy()
+    g["geometry"] = g.geometry.intersection(box)
+    g = g[~g.geometry.is_empty & (g.geometry.area > 0)].reset_index(drop=True)
+    print(f"  {len(g):,d} counties, as the places a per-resident figure is "
+          "divided by")
+    return g
+
+
+def per_resident(value, people, geo, munis=None):
+    """Land value per resident, as a quantity a cartogram can actually sum.
+
+    A cartogram gives a tile area in proportion to what it carries, so a
+    town's area is the *sum* over its tiles.  Handing every tile the ratio
+    itself therefore draws `tile count x ratio`, not the ratio: on the New
+    York cut that gave Lacey Township, a vast empty stretch of the Pine
+    Barrens, a sixth of the page at a below-average $26,851 a resident, while
+    Fire Island at $2.1m a resident -- seventy-seven times dearer -- got a
+    third of Lacey's area.  The map said the opposite of what it meant.
+
+    What sums correctly is the tile's own land value divided by the
+    population of the *place* it stands in.  Add those over a town and the
+    town's numerators come to its land value while the denominator stays put,
+    so the total is exactly its land value per resident, however many tiles it
+    happens to cover.  A town twice the size no longer counts twice.
+
+    The place is the smallest drawn boundary containing the tile, so a village
+    inside a township is its own place rather than part of its neighbour.
+    Where no boundary covers the ground the denominator falls back to the
+    people within five tiles, which is 2.4 km on a metro cut.  On the
+    national map, where a town is smaller than a single 3.84 km tile, the
+    place is the county instead.
+
+    Measured against each town's true land value per resident, this ranks them
+    at 0.89; handing every tile the neighbourhood ratio ranked them at 0.57.
+    """
+    from scipy.ndimage import uniform_filter
+    k = RATIO_BOX
+    nb = uniform_filter(people.astype(float), size=k, mode="constant") * k * k
+    den = np.zeros_like(nb)
+    if munis is not None and len(munis):
+        x0, y1, side = geo["x0"], geo["y1"], geo["side"]
+        tr = from_bounds(x0, y1 - geo["ty"] * side,
+                         x0 + geo["tx"] * side, y1, geo["tx"], geo["ty"])
+        # Largest first, so a smaller boundary laid over it wins the ground.
+        for i in munis.geometry.area.sort_values(ascending=False).index:
+            m = rasterize([(munis.geometry.iloc[i], 1)], out_shape=value.shape,
+                          transform=tr, fill=0).astype(bool)
+            if not m.any():
+                continue
+            n = people[m].sum()
+            if n >= 1.0:
+                den[m] = n
+    den = np.where(den >= 1.0, den, nb)
+    # One resident, not "more than zero".  The neighbourhood sum comes out of
+    # a float filter, which over empty ground returns 1e-16 rather than 0, and
+    # a tile's value divided by 1e-16 is not a large number, it is a
+    # meaningless one.  Boise's per-resident scale ran to $1.8e23 a head and
+    # its flow was asked to span twenty-four billion billion-fold; the metros
+    # it broke -- Boise, Salt Lake City, Albuquerque, Tucson, El Paso -- are
+    # exactly the ones with room enough to have ground nobody is near.  Below
+    # one person there is no denominator, and the tile is treated as the
+    # unpeopled ground it is.
+    live = den >= 1.0
+    # What the flow is given: a tile's own value over its place's people, so
+    # that a place's tiles add up to its ratio and no further.
+    weight = np.zeros_like(value)
+    weight[live] = value[live] / den[live]
+    # What the colour is given: the place's ratio itself, which is what those
+    # weights sum to.  A tile's own weight is a share of that and means
+    # nothing on its own, so colouring by it would put a number on the page
+    # that the area disagrees with.
+    from scipy.ndimage import uniform_filter as _uf
+    vnb = _uf(value.astype(float), size=k, mode="constant") * k * k
+    ratio = np.zeros_like(value)
+    ratio[live] = vnb[live] / den[live]
+    if munis is not None and len(munis):
+        for i in munis.geometry.area.sort_values(ascending=False).index:
+            m = rasterize([(munis.geometry.iloc[i], 1)], out_shape=value.shape,
+                          transform=tr, fill=0).astype(bool)
+            if not m.any():
+                continue
+            n = people[m].sum()
+            if n >= 1.0:
+                ratio[m] = value[m].sum() / n
+    return weight, ratio
 
 
 def _gdp_tiles(geo, kinds=(0, 1, 2)):
@@ -1715,8 +1835,8 @@ def _named_boxes(mbox, mgeo):
 
 def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
            lab0, real, tile_value, areas, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None, people=None, moved2=None, moved3=None,
-           pkind=(), pname=()):
+           pidx=(), n_town=None, people=None, perres=None, moved2=None,
+           moved3=None, pkind=(), pname=()):
     """Everything both pages need: the drawing box, the colours, the payload.
 
     The document figure and the scrolled story draw the same tiles with the
@@ -1814,9 +1934,14 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     # this is one more byte per tile and a switch, not another map.
     u2 = lo2 = hi2 = pop16 = None
     if people is not None:
+        # The same neighbourhood ratio the second flow was solved on, so that
+        # area and colour are the same number.  Computing it again per tile
+        # here would put a colour on the page that the geometry disagrees
+        # with.
         pp = np.zeros_like(tile_value)
-        live = (people > 0) & real
-        pp[live] = tile_value[live] / people[live]
+        live = (perres > 0) & real if perres is not None else (people > 0) & real
+        pp[live] = (perres[live] if perres is not None
+                    else tile_value[live] / people[live])
         if live.any():
             logp = np.log10(np.maximum(pp, 1.0))
             lo2, hi2 = _wpct(logp[live], tile_value[live], [2, 99.5])
@@ -2269,8 +2394,8 @@ def still(path, px, quads, u, W, H):
 
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
            postal, city_name, lab0, real, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None, people=None, moved2=None, moved3=None,
-           pkind=(), pname=()):
+           pidx=(), n_town=None, people=None, perres=None, moved2=None,
+           moved3=None, pkind=(), pname=()):
     FIG.mkdir(parents=True, exist_ok=True)
     tile_value = value.ravel()[tiles]
     areas = _areas(moved, quads)
@@ -2302,7 +2427,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
     s = _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal,
                city_name, lab0, real, tile_value, areas, midx=midx,
                widx=widx, mgeo=mgeo, pidx=pidx, n_town=n_town,
-               people=people, moved2=moved2, moved3=moved3,
+               people=people, perres=perres, moved2=moved2, moved3=moved3,
                pkind=pkind, pname=pname)
     W, H = s["W"], s["H"]
     base, span, lo, hi = s["base"], s["span"], s["lo"], s["hi"]
@@ -2344,11 +2469,15 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         nav = ('<span class="sp"></span>'
                + "".join(f'<a href="figures/land_value_cartogram_{k}.html">'
                          f'{name} &rarr;</a>' for k, name in CUTS))
-    elif key in dict(CUTS):
-        # A metro cut offers the country and its peers, itself excepted: the
-        # row is how a reader moves between them without going back first.
+    elif r["window"] is not None:
+        # Every cut offers the country and the largest few, itself excepted:
+        # the row is how a reader moves between them without going back
+        # first.  It used to be `key in dict(CUTS)`, which is the five metros
+        # the national map links to -- so those five could get home and the
+        # other seventy-six could not.  A reader who searched their way into
+        # Houston had no way out of it.
         nav = ('<span class="sp"></span>'
-               '<a href="../index.html">the whole country &rarr;</a>'
+               '<a href="../index.html">&larr; the whole country</a>'
                + "".join(f'<a href="land_value_cartogram_{k}.html">'
                          f'{name} &rarr;</a>'
                          for k, name in CUTS if k != key))
@@ -2375,6 +2504,11 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
 
     html = _HTML.format(
         head=head, nav=nav,
+        # The oldest convention on the web, and the one a reader reaches for
+        # before they read a control row: the way back is at the top left.
+        home=('<a class="home" href="../index.html" '
+              'title="the whole country">&#8598;</a>'
+              if r["window"] is not None else ""),
         hascut=json.dumps({k: prefix + f"land_value_cartogram_{v}.html"
                            for k, v in hascut.items()}),
         W=f"{W:.0f}", H=f"{H:.0f}", maxk=f"{MAX_ZOOM:.0f}",
@@ -2416,7 +2550,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         legend=(_legend_diverge(span, base) if r["diverge"]
                 else _legend(lo, hi, r["caption"])),
         legend2=(_legend(s["lo2"], s["hi2"],
-                         "land value per resident of the same ground",
+                         "land value per resident of the town it stands in",
                          bar="bar2") if s["hasper"] else ""),
         perhead=json.dumps(bool(s["hasper"])),
         noun=_esc(r["noun"]), colour=r["colour"], notes=r["notes"],
@@ -2961,6 +3095,9 @@ svg.ov {{ pointer-events:none; }}
   paint-order:stroke; stroke:var(--maptownhalo); stroke-opacity:.55;
   stroke-width:2.6px; stroke-linejoin:round; text-anchor:middle;
   user-select:none; }}
+a.home {{ text-decoration:none; color:var(--muted); margin-right:.4em;
+  font-weight:400; }}
+a.home:hover {{ color:var(--ink); }}
 .legend {{ margin:14px 0 0; max-width:520px; }}
 .bar {{ height:11px; border-radius:3px; }}
 .ticks {{ display:flex; justify-content:space-between; font-size:11px;
@@ -2998,7 +3135,7 @@ svg.ov {{ pointer-events:none; }}
 }}
 </style>
 <div class="wrap">
-<h1>{title}</h1>
+<h1>{home}{title}</h1>
 <p class="sub">{lede} {provenance} Scroll to zoom, drag to pan, hover for a
 value.</p>
 <div id="stage">
@@ -3207,11 +3344,11 @@ stage.addEventListener('pointermove',e=>{{
   }} else if(MODE && TPOP) {{
     const n=TPOP[t];
     tip.innerHTML=`<b>${{money(v)}}</b> {noun}<br>`+
-      `<b>${{n.toLocaleString()}}</b> resident${{n===1?'':'s'}}<br>`+
-      (n ? `<span style="color:var(--muted)"><b>${{money(v/n)}}</b> of land `+
-           `per resident</span>`
-         : `<span style="color:var(--muted)">nobody lives here, so there is `+
-           `no price per resident to draw</span>`);
+      `<b>${{n.toLocaleString()}}</b> resident${{n===1?'':'s'}} on this tile<br>`+
+      `<span style="color:var(--muted)">the colour is the land value per `+
+      `resident of the town this tile stands in, not of the tile: one `+
+      `tile\u2019s handful of people is too small a denominator to divide `+
+      `by</span>`;
   }} else {{
     tip.innerHTML=`<b>${{money(v)}}</b> {noun}<br>`+
       `<span style="color:var(--muted)">${{money(v/KM2)}} per km&sup2;</span>`
@@ -3428,10 +3565,12 @@ function applyView() {{
     ? 'Area is real ground \u2014 nothing here is distorted, so area carries '
       + 'no meaning and only the colour does.'
     : g===1
-    ? 'Area is land value per resident: the more land value each resident '
-      + 'stands on, the larger the ground is drawn. That is a ratio, and '
-      + 'ratios do not add up \u2014 the page compares one place with another '
-      + 'honestly, and its total area means nothing.'
+    ? 'Area is land value per resident: a town whose land is worth more per '
+      + 'person living in it is drawn larger. Ratios do not add up, so a '
+      + 'town\u2019s tiles are each given its value over its own population '
+      + '\u2014 which is what makes them sum to the ratio and not to the '
+      + 'ratio times the size of the town. The total area still means '
+      + 'nothing; the comparison between two places does.'
     : 'Area is land value: every tile is the same patch of real ground drawn '
       + 'at its share of the money.';
   hud.textContent=view.k.toFixed(1)+'x';
