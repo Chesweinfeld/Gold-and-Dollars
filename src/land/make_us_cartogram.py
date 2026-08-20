@@ -408,8 +408,14 @@ def main(argv):
     # The flow grid cell: the finest scale the deformation can carry.
     borders, postal = state_borders(
         geo, flat=r["flat"], cell=geo["tx"] * geo["side"] / r["nx"])
-    mshapes = metro_bounds(geo, MIN_METRO if geo["window"] is None else 0.0,
-                           r["flat"], geo["tx"] * geo["side"] / r["nx"])
+    # Only on the national map.  A metro cut is clipped to one metro's own
+    # boundary, so the metro outline there is the outline of the drawn ground
+    # -- a switch that traces the edge of the page and tells the reader
+    # nothing they cannot already see.  Dropping it takes the ring out of the
+    # flow as well as off the page.
+    mshapes = (metro_bounds(geo, MIN_METRO, r["flat"],
+                            geo["tx"] * geo["side"] / r["nx"])
+               if geo["window"] is None else None)
     # Water, city limits and neighbourhood names only on the metropolitan
     # cuts.  The national cut would need a file per county for three thousand
     # counties to draw rivers a pixel wide, and at 3.84 km a tile is bigger
