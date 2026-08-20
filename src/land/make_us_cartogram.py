@@ -470,11 +470,7 @@ def main(argv):
     moved2 = None
     perres = None
     if people is not None and not r["flat"]:
-        # The national map draws no town lines, and at 3.84 km a town is
-        # smaller than a tile anyway, so the place there is the county --
-        # the same idea at the only scale the page can carry.
-        places = pshapes if pshapes is not None else _counties(geo)
-        perweight, perres = per_resident(value, people, geo, places)
+        perweight, perres = per_resident(value, people, geo, pshapes)
         pr = perweight.ravel()[tiles]
         tv = value.ravel()[tiles]
         live = pr > 0
@@ -655,19 +651,6 @@ RATIO_BOX = 5
 PER_CLAMP = [5, 95]
 
 
-def _counties(geo):
-    """County outlines clipped to the cut, as the national map's places."""
-    g = gpd.read_file(
-        f"zip://{IN / 'cb_2023_us_county_500k.zip'}").to_crs(ALBERS)
-    box = _clipbox(geo)
-    g = g[g.intersects(box)].copy()
-    g["geometry"] = g.geometry.intersection(box)
-    g = g[~g.geometry.is_empty & (g.geometry.area > 0)].reset_index(drop=True)
-    print(f"  {len(g):,d} counties, as the places a per-resident figure is "
-          "divided by")
-    return g
-
-
 def per_resident(value, people, geo, munis=None):
     """Land value per resident, as a quantity a cartogram can actually sum.
 
@@ -688,9 +671,14 @@ def per_resident(value, people, geo, munis=None):
     The place is the smallest drawn boundary containing the tile, so a village
     inside a township is its own place rather than part of its neighbour.
     Where no boundary covers the ground the denominator falls back to the
-    people within five tiles, which is 2.4 km on a metro cut.  On the
-    national map, where a town is smaller than a single 3.84 km tile, the
-    place is the county instead.
+    people within five tiles -- 2.4 km on a metro cut, 19 km on the national
+    map, which draws no town lines at all.  The fallback gives up the exact
+    per-place summation: over a stretch much larger than the window the
+    weights accumulate, so a big empty county reads a little larger than its
+    own figure warrants.  Counties were tried in its place and are exact, but
+    a figure that is constant inside a county makes the flow settle into
+    county-shaped plateaus, and a national map drawn at 3.84 km should not
+    look like a county map.
 
     Measured against each town's true land value per resident, this ranks them
     at 0.89; handing every tile the neighbourhood ratio ranked them at 0.57.
@@ -1944,7 +1932,11 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
                     else tile_value[live] / people[live])
         if live.any():
             logp = np.log10(np.maximum(pp, 1.0))
-            lo2, hi2 = _wpct(logp[live], tile_value[live], [2, 99.5])
+            # The same percentiles the flow is clamped at.  They were 2 and
+            # 99.5 here against 5 and 95 there, so the palest ground on the
+            # page was coloured past the point where it stopped being sized:
+            # Catron County was drawn at the clamp and shaded beyond it.
+            lo2, hi2 = _wpct(logp[live], tile_value[live], PER_CLAMP)
             q = np.clip(np.round((logp - lo2) / max(hi2 - lo2, 1e-9) * 254),
                         0, 254)
             # 255 is the sentinel for ground nobody lives on, not the top of
