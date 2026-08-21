@@ -30,7 +30,8 @@ from pyproj import Transformer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from make_us_cartogram import (   # noqa: E402
-    DIVERGE, FIG, MAX_ZOOM, NOVAL, REGIONS, _areas, _esc, _gdp_tiles, _GL_JS,
+    DIVERGE, DIVERGE_DARK, FIG, MAX_ZOOM, NOVAL, NOVAL_DARK, REGIONS,
+    _areas, _esc, _gdp_tiles, _GL_JS,
     _scene,
     build_mesh, cities, pack_points, state_borders, tile_values,
 )
@@ -47,7 +48,8 @@ def main():
     borders, postal = state_borders(
         geo, flat=r["flat"], cell=geo["tx"] * geo["side"] / r["nx"])
     city_name, city_xy = cities(geo, 420)
-    pts, bidx, midx, widx, lab0 = pack_points(lattice, geo, borders, city_xy)
+    pts, bidx, midx, widx, pidx, lab0 = pack_points(
+        lattice, geo, borders, city_xy)
     tile_value = value.ravel()[tiles]
     s = _scene(r, geo, tiles, quads, pts, len(lattice), bidx, postal,
                city_name, lab0, real.ravel()[tiles], tile_value,
@@ -316,7 +318,7 @@ def build_steps(st):
 
         step(MID, 62,
              "Two squares, one river",
-             f"Start where the ground is dearest. This square of Midtown "
+             f"Start with the most expensive land there is. This square of Midtown "
              f"Manhattan holds <b>{money(mid['land'])}</b> of land. The next "
              f"square east, across the East River in Long Island City, holds "
              f"<b>{money(lic['land'])}</b> — very slightly more. By price they "
@@ -334,7 +336,7 @@ def build_steps(st):
 
         step(MID, 31,
              "The teal is the expensive part",
-             f"That is the reading to break first: dear ground is not brown "
+             f"That is the reading to break first: expensive land is not brown "
              f"ground. This one square carries <b>{money(mid['gdp'])}</b> of "
              f"output a year — more than most states — and its "
              f"{money(mid['land'])} of land is {rel(mid['rel'])} the national "
@@ -358,7 +360,7 @@ def build_steps(st):
              f"and the rent the BEA imputes to owner-occupiers for living in "
              f"their own houses — but a house earns a small fraction of its "
              f"price in a year, so a square that is only houses is brown "
-             f"however dear the houses are.",
+             f"however expensive the houses are.",
              mark=(0, 0, 1, 1), kind="brown"),
 
         step(HAM, 150,
@@ -505,12 +507,21 @@ def write(s, steps, st, geo):
         waters=json.dumps([]),   # nor a water one: it is the national cut
         labels=json.dumps(s["labels"]), towns=json.dumps(s["towns"]),
         ramp=json.dumps(DIVERGE), noval=json.dumps(NOVAL),
+        # The shared JS grew a dark scale, town lines, neighbourhood names and
+        # a second geometry after this page was last built.  The story draws
+        # none of those layers, so each one gets its empty value here rather
+        # than a stub the page would have to know how to hide.
+        rampdark=json.dumps(DIVERGE_DARK), novaldark=json.dumps(NOVAL_DARK),
+        munis=json.dumps([]), cdps=json.dumps([]), hoods=json.dumps([]),
+        mbox=json.dumps({}), tbox=json.dumps({}), sbox=json.dumps({}),
+        iscut=json.dumps(False), hascut=json.dumps({}),
+        flatgeo=json.dumps(None),
         ramp_css=", ".join(f"{c} {i/(len(DIVERGE)-1)*100:.0f}%"
                            for i, c in enumerate(DIVERGE)),
         steps=json.dumps(steps),
         teal=DIVERGE[0], brown=DIVERGE[-1], noval_css=NOVAL,
         baseline=f"{B:.2f}",
-        title=_esc("Dear ground, cheap ground"),
+        title=_esc("Expensive land, cheap land"),
     )
     out = FIG / "land_vs_output_story_us.html"
     out.write_text(html, encoding="utf-8")
@@ -621,7 +632,13 @@ b.teal {{ color:var(--teal); }} b.brown {{ color:var(--brown); }}
     <div id="stage">
       <canvas id="cv"></canvas>
       <svg class="ov" id="ov" preserveAspectRatio="none">
-        <g id="sc"><g id="bd"></g><g id="lb"></g><g id="tw"></g>
+        <!-- The shared paintOverlay() writes into every one of these groups
+             by id and does not check that they exist.  The story draws only
+             borders, labels and town names, but the empty groups have to be
+             here, in the drawing order the map uses, or the first missing
+             one throws and takes the whole script with it. -->
+        <g id="sc"><g id="wt"></g><g id="pb"></g><g id="mb"></g
+          ><g id="bd"></g><g id="lb"></g><g id="nh"></g><g id="tw"></g>
           <rect id="mk"/></g>
       </svg>
       <div id="tip"></div>
@@ -633,7 +650,7 @@ b.teal {{ color:var(--teal); }} b.brown {{ color:var(--brown); }}
 </div>
 <div id="key">
   <div class="bar"></div>
-  <div class="ends"><span>cheap for the work</span><span>dear for it</span></div>
+  <div class="ends"><span>cheap for the work</span><span>expensive for it</span></div>
   <div class="lab">land value &divide; a year of the output on it, against the
     national {baseline} years. <i></i> no workplace: county data only.</div>
 </div>

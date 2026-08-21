@@ -6,7 +6,7 @@ printed here, read off data/land/us_land_vs_gdp.csv.gz, and any edit to the
 underlying surfaces will show up as a changed table rather than as a caption
 that has quietly become false.
 
-The places were chosen to break the reading that dear land is brown and cheap
+The places were chosen to break the reading that expensive land is brown and cheap
 land is teal.  Midtown Manhattan is the most expensive ground in the country
 and comes out teal; the Cleveland Flats are cheap industrial ground and come
 out teal too, for the same reason -- the work standing on both dwarfs the price
@@ -40,7 +40,7 @@ PLACES = [
     ("Gary, Indiana (mill district)", -87.34, 41.62,
      "FLAGGED: Indiana's urban land is under-priced by the model"),
     ("Midtown Manhattan", -73.984, 40.755,
-     "the dearest ground in America, and still teal"),
+     "the most expensive land in America, and still teal"),
     ("Iowa farmland (Story County)", -93.60, 42.03, "row crop"),
     ("Beverly Hills", -118.40, 34.07, "expensive, but worked"),
     ("Bakersfield, California", -119.02, 35.37, "oil and agriculture"),

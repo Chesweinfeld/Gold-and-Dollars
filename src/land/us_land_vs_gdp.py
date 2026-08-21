@@ -2,7 +2,7 @@
 
 Both American surfaces in this directory are cut from the same grid, so they
 can be divided by each other.  The ratio -- dollars of land value per dollar of
-annual GDP -- is the interesting quantity: it is high where ground is dear
+annual GDP -- is the interesting quantity: it is high where land is expensive
 relative to what is done on it, and low where a lot of output stands on cheap
 ground.
 

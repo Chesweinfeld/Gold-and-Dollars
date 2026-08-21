@@ -211,7 +211,7 @@ nationwide, contributed by the people who live there. It is neither
 authoritative nor evenly covered, and the page says so and carries the ODbL
 attribution — for a landmark that is a fair source, for a number it would not
 be. There being no population to rank them by, they are ranked by the thing
-the map is about: the land value of the tile each name stands on, dearest
+the map is about: the land value of the tile each name stands on, most expensive
 first, which on a cartogram is also where a name has room.
 
 The coverage is uneven in ways worth stating. Baltimore has 248 names against
@@ -224,8 +224,8 @@ leaves that one cut thin.
 
 The colour has a switch. By default it is land value per square kilometre of
 real ground — a price. **Per resident** divides that by the people living on
-the same tile, which asks a different question: not where the dear ground is,
-but where the dear ground is carrying few people. A tower block and a golf
+the same tile, which asks a different question: not where the expensive
+land is, but where the expensive land is carrying few people. A tower block and a golf
 course can cost the same by the acre and differ a thousandfold by the head.
 On Baltimore the price spans 45-fold across the page and the price per
 resident spans 860-fold, so the two are not restatements of each other.
@@ -234,7 +234,7 @@ Nothing about the geometry changes — area is still land value — so the switc
 rewrites one byte per tile through the same ramp rather than loading a second
 map.
 
-Ground with nobody on it is drawn grey, not dear. A price per resident there
+Ground with nobody on it is drawn grey, not expensive. A price per resident there
 is a division by zero, and colouring it at the top of the scale would be a
 claim about the emptiest land on the map. Each figure prints how many tiles
 that is and what share of the page's land value they hold — on Baltimore,

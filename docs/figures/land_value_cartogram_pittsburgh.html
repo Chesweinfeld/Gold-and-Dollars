@@ -33,7 +33,8 @@
 :root { --mapbg:#ffffff; --mapink:#14171a; --mapline:#000000;
   --mapwater:#b9cbdb; --mapwaterline:#41617f;
   /* City names are keyed separately from state codes, because the two sit on
-     opposite ends of the scale.  A city name is always on the dearest tiles
+     opposite ends of the scale.  A city name is always on the most
+     expensive tiles
      -- that is what makes it a city -- and the dark scale draws those
      brightest, so light ink there disappears exactly where the map is most
      worth reading.  State codes sit over rural ground, which is dimmest, and
@@ -232,7 +233,7 @@ a.home:hover { color:var(--ink); }
 </style>
 <div class="wrap">
 <h1><a class="home" href="../index.html" title="the whole country">&#8598;</a>What land is worth around Pittsburgh</h1>
-<p class="sub">A cartogram sizes each place by a number instead of by its area. Every square here is the same 0.48 km of real ground, drawn at its share of the $27 billion of land value in the Pittsburgh metropolitan area, as the Census draws it, so dear ground swells and cheap ground shrinks to a thread. 64,124 tiles; scroll to zoom, hover for a value.</p>
+<p class="sub">A cartogram sizes each place by a number instead of by its area. Every square here is the same 0.48 km of real ground, drawn at its share of the $27 billion of land value in the Pittsburgh metropolitan area, as the Census draws it, so expensive land swells and cheap land shrinks to a thread. 64,124 tiles; scroll to zoom, hover for a value.</p>
 <!-- The controls sit above the map, directly under the sentence that says
      what a cartogram is: the switch that turns the deformation off is the
      answer to the question that sentence raises, and a reader should not
@@ -741,7 +742,7 @@ stage.addEventListener('pointermove',e=>{
       `<b>${g? money(g) : '&mdash;'}</b> of output a year<br>`+
       (g ? `<span style="color:var(--muted)">the land is worth <b>${dur}</b> of `+
            `that output<br>`+
-           (rel>=1 ? `<b>${rel.toFixed(1)}&times;</b> the U.S. figure &mdash; dear for the work on it`
+           (rel>=1 ? `<b>${rel.toFixed(1)}&times;</b> the U.S. figure &mdash; expensive for the work on it`
                    : `<b>1/${(1/rel).toFixed(1)}</b> of the U.S. figure &mdash; cheap for the work on it`)+
            `</span>`
          : `<span style="color:var(--muted)">no workplace here &mdash; the `+

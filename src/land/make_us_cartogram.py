@@ -124,7 +124,7 @@ the midpoint of the colour scale. Everything else is measured against it.<br><br
 <b>0.08 years</b>: $210m of land carrying $2.5bn of output a year. Midtown
 Manhattan &mdash; the most expensive dirt in the country at $17.7bn a square
 &mdash; is also teal, at <b>0.04 years</b>, because the $419bn produced on it
-each year dwarfs even that price. Dear and cheap are not the same axis as brown
+each year dwarfs even that price. Expensive and cheap are not the same axis as brown
 and teal.<br><br>
 <b>High (brown) is ground priced for something other than the work on it.</b>
 Cape Cod runs at <b>4.0 years</b>, a hundred times Manhattan: the land is
@@ -175,7 +175,7 @@ different vintages and different rules: land is Nolte&rsquo;s 2020-dollar
 model of what private land would sell for, output is BEA county GDP for 2023
 placed by where the work, the housing and the farming are. A stock
 over a flow gives units of years, and the land model compresses the top of the
-price distribution, so the ratio understates how dear the most expensive ground
+price distribution, so the ratio understates how expensive the priciest ground
 really is. This is a comparison of two maps, not a measured statistic."""
 
 _TAIL = """ The source covers the conterminous states only; Alaska and Hawaii
@@ -235,13 +235,13 @@ REGIONS = {
     # Same geometry as `us` -- area is still land value -- but coloured by how
     # far the ground departs from the national ratio of land value to output.
     # It reuses that cut's transported mesh, so it costs a render, not a solve.
-    "usratio": _cut(8, 4608, "Dear ground, cheap ground",
+    "usratio": _cut(8, 4608, "Expensive land, cheap land",
                     "the contiguous United States", None, mesh="us",
                     diverge=True),
     # The same comparison undeformed.  A ratio is an attribute of a place, not
     # a quantity to be summed, so there is nothing for a cartogram to encode in
     # area -- equal ground is the honest frame for it.
-    "usratioflat": _cut(8, 4608, "Dear ground, cheap ground",
+    "usratioflat": _cut(8, 4608, "Expensive land, cheap land",
                         "the contiguous United States", None,
                         diverge=True, flat=True),
 }
@@ -311,8 +311,8 @@ def metro_cut(key):
 RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
         "#256abf", "#184f95", "#0d366b"]
 # The same scale for a dark ground, and it has to run the other way.  On white,
-# dear land is the darkest blue because dark is what stands out; on black that
-# would bury it, so dear land is the brightest.  The low end sits just above
+# expensive land is the darkest blue because dark is what stands out; on
+# black that would bury it, so expensive land is the brightest.  The low end sits just above
 # the ground rather than on it, so that cheap land still reads as land and not
 # as a hole in the map.
 RAMP_DARK = ["#16222f", "#1b3b58", "#1f5685", "#2374b5",
@@ -451,7 +451,7 @@ def main(argv):
     # The second geometry, and the only other one left: where the ground
     # actually is.  It costs no solve, because `pts` already holds it from
     # before any flow touched them.  A reader who wants to know whether a
-    # place is big because it is dear or big because it is big has nowhere
+    # place is big because it is expensive or big because it is big has
     # else to look.
     moved3 = None if r["flat"] else pts
     render(key, r, value, geo, tiles, quads, moved, len(lattice),
@@ -1257,7 +1257,7 @@ def _overpass(query, path, tries=4):
 
 
 def _hoods(geo, city, citypt, value):
-    """The neighbourhoods of the metro's own city, dearest ground first.
+    """The neighbourhoods of the metro's own city, most expensive first.
 
     There is no national dataset of American neighbourhoods.  The Census does
     not delineate them -- a neighbourhood has no government, no boundary and
@@ -1274,8 +1274,9 @@ def _hoods(geo, city, citypt, value):
 
     Order decides which names the reveal rule spends its budget on, and there
     is no population to rank them by.  So they are ranked by the thing the map
-    is about: the land value of the tile each one stands on, dearest first.
-    On a cartogram that is also the most useful order, because the dearest
+    is about: the land value of the tile each one stands on, the most
+    expensive first.  On a cartogram that is also the most useful order,
+    because the most expensive
     ground is the ground that has swollen and has room for a name.
     """
     g = _muni()
@@ -1379,7 +1380,7 @@ def _muni_labels(munis, geo, value):
     hundred, Sag Harbor two thousand and Bridgehampton seventeen: the whole
     east end of Long Island sorts below every suburb in Nassau County and is
     never reached, while the cartogram draws it enormous because the land
-    there is some of the dearest in the country.  A reader looking at the
+    there is some of the most expensive in the country.  A reader looking at the
     biggest shapes on the page was being told the names of the smallest.
 
     The point is the boundary's own representative point, so a name sits
@@ -1748,11 +1749,11 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
         # they are regenerated on every build rather than typed once.
         col = has & real
         p10, p50, p90 = _wpct(lr[col], tile_value[col], [10, 50, 90])
-        dear = tile_value[col][lr[col] > 0].sum() / tile_value[col].sum()
+        above = tile_value[col][lr[col] > 0].sum() / tile_value[col].sum()
         print(f"  of the coloured ground, the median dollar of land value sits "
               f"on {base * 10**p50:.3f} years of its own output "
               f"({base * 10**p10:.3f} at the 10th, {base * 10**p90:.1f} at the "
-              f"90th); {dear:.1%} of it is dearer than the baseline")
+              f"90th); {above:.1%} of it is above the baseline")
         u = np.clip(np.round((lr / span + 1) / 2 * 254), 0, 254).astype("u1")
         u[~has] = 255                      # the sentinel the browser paints grey
         lo, hi = -span, span
@@ -2336,8 +2337,8 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
               f"A cartogram sizes each place by a number instead of by its "
               f"area. Every square here is the same {side:.2f} km of real "
               f"ground, drawn at its share of the {money} of "
-              f"{_esc(r['quantity'])} in {_esc(r['where'])}, so dear ground "
-              f"swells and cheap ground shrinks to a thread. "
+              f"{_esc(r['quantity'])} in {_esc(r['where'])}, so expensive "
+              f"land swells and cheap land shrinks to a thread. "
               f"{len(draw):,d} tiles; scroll to zoom, hover for a value."
               + (" The colour is the land&rsquo;s price divided by the output "
                  "produced on it in a year: a price-to-earnings ratio for the "
@@ -2732,7 +2733,8 @@ _HTML = """<!doctype html>
 :root {{ --mapbg:#ffffff; --mapink:#14171a; --mapline:#000000;
   --mapwater:#b9cbdb; --mapwaterline:#41617f;
   /* City names are keyed separately from state codes, because the two sit on
-     opposite ends of the scale.  A city name is always on the dearest tiles
+     opposite ends of the scale.  A city name is always on the most
+     expensive tiles
      -- that is what makes it a city -- and the dark scale draws those
      brightest, so light ink there disappears exactly where the map is most
      worth reading.  State codes sit over rural ground, which is dimmest, and
@@ -3182,7 +3184,7 @@ stage.addEventListener('pointermove',e=>{{
       `<b>${{g? money(g) : '&mdash;'}}</b> of output a year<br>`+
       (g ? `<span style="color:var(--muted)">the land is worth <b>${{dur}}</b> of `+
            `that output<br>`+
-           (rel>=1 ? `<b>${{rel.toFixed(1)}}&times;</b> the U.S. figure &mdash; dear for the work on it`
+           (rel>=1 ? `<b>${{rel.toFixed(1)}}&times;</b> the U.S. figure &mdash; expensive for the work on it`
                    : `<b>1/${{(1/rel).toFixed(1)}}</b> of the U.S. figure &mdash; cheap for the work on it`)+
            `</span>`
          : `<span style="color:var(--muted)">no workplace here &mdash; the `+

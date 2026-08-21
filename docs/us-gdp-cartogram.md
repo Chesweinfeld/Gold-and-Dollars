@@ -359,7 +359,7 @@ asset and the local economy as the earnings. Nationally it is 0.41 — all the
 privately valued land in the lower 48 is worth about five months of what is
 produced on it.
 
-The reading that has to be broken first is *dear land is brown, cheap land is
+The reading that has to be broken first is *expensive land is brown, cheap land is
 teal*. It is not that axis at all. These ten squares are printed by
 `src/land/ratio_examples.py`, straight off the shipped tiles, so the prose here
 cannot drift away from the map:
@@ -429,7 +429,7 @@ What it shows, weighted by land value, over the ground that gets a colour:
 | national baseline | 0.4046 years of output |
 | median tile | **0.619 years** |
 | 10th / 90th percentile | 0.146 / 5.4 years |
-| share of land value dearer than the baseline | **64.9%** |
+| share of land value above the baseline | **64.9%** |
 | land value given no ratio, drawn grey | **20.2%** |
 | land value the map found nothing at all on | **0.03%** |
 
@@ -449,7 +449,7 @@ Two things fall out of it.
 years of its own output, against a national average of 0.40.** The aggregate is
 dragged down by a handful of central business districts producing enormous
 output on small footprints; the typical piece of valuable ground is nothing
-like the aggregate. Sixty-three per cent of land value is dearer than the
+like the aggregate. Sixty-three per cent of land value is above the
 average implies.
 
 **The ratio climbs steadily with distance from downtown.** Pooling the twelve
