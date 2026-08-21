@@ -232,7 +232,7 @@ a.home:hover { color:var(--ink); }
 </style>
 <div class="wrap">
 <h1><a class="home" href="../index.html" title="the whole country">&#8598;</a>What land is worth around Houston</h1>
-<p class="sub">Every square is the same 0.48 km of real ground. Its size on the page is its share of the $75 billion of land value in the Houston metropolitan area, as the Census draws it. 102,293 tiles. Land value: Nolte, <a href="https://doi.org/10.1073/pnas.2012865117">&ldquo;High-resolution land value maps&hellip;&rdquo;</a>, <i>PNAS</i> 117:47 (2020) &mdash; the PLACES vacant-land model, 480 m, fitted to six million arm&rsquo;s-length sales (<a href="https://doi.org/10.5281/zenodo.4073355">Zenodo</a>, CC-0). Cities: Census metropolitan areas over 800,000 people (ACS 2023), at their largest place. Residents: the 2020 Census, counted by census block, which is the finest unit the count is published for. The median occupied block is 0.031 km&sup2;, seven times smaller than a 480 m tile. Shown per tile on hover. Town lines: Census incorporated places, county subdivisions and census designated places, 2023 boundaries at 1:500,000. A <b>heavier</b> line is a government: a city, a village, or one of the towns and townships that govern in twenty states. That second file draws the towns of New England and New York and the townships of New Jersey, Pennsylvania and the Midwest. A <b>lighter</b> line is a census designated place, which the Census draws around a settlement in order to count it. No government sits inside one, and most of Long Island is one. Statistical townships, in the thirty states where a township governs nothing, are not drawn. Neighbourhoods: OpenStreetMap contributors, <a href="https://www.openstreetmap.org/copyright">ODbL</a>. No official dataset of American neighbourhoods exists. These are the names residents have recorded. Scroll to zoom, drag to pan, hover for a
+<p class="sub">This is a cartogram: a map that sizes each place by a number rather than by its area. Every square is the same 0.48 km of real ground, drawn at its share of the $75 billion of land value in the Houston metropolitan area, as the Census draws it, so dear ground swells and cheap ground shrinks to a thread. 102,293 tiles. The <b>ordinary map</b> switch puts every tile back on the ground it occupies. Land value: Nolte, <a href="https://doi.org/10.1073/pnas.2012865117">&ldquo;High-resolution land value maps&hellip;&rdquo;</a>, <i>PNAS</i> 117:47 (2020) &mdash; the PLACES vacant-land model, 480 m, fitted to six million arm&rsquo;s-length sales (<a href="https://doi.org/10.5281/zenodo.4073355">Zenodo</a>, CC-0). Cities: Census metropolitan areas over 800,000 people (ACS 2023), at their largest place. Residents: the 2020 Census, counted by census block, which is the finest unit the count is published for. The median occupied block is 0.031 km&sup2;, seven times smaller than a 480 m tile. Shown per tile on hover. Town lines: Census incorporated places, county subdivisions and census designated places, 2023 boundaries at 1:500,000. A <b>heavier</b> line is a government: a city, a village, or one of the towns and townships that govern in twenty states. That second file draws the towns of New England and New York and the townships of New Jersey, Pennsylvania and the Midwest. A <b>lighter</b> line is a census designated place, which the Census draws around a settlement in order to count it. No government sits inside one, and most of Long Island is one. Statistical townships, in the thirty states where a township governs nothing, are not drawn. Neighbourhoods: OpenStreetMap contributors, <a href="https://www.openstreetmap.org/copyright">ODbL</a>. No official dataset of American neighbourhoods exists. These are the names residents have recorded. Scroll to zoom, drag to pan, hover for a
 value.</p>
 <div id="stage">
   <canvas id="cv"></canvas>
@@ -252,16 +252,19 @@ value.</p>
       aria-expanded="false" aria-autocomplete="list" aria-controls="hits"
     ><ul id="hits" role="listbox" hidden></ul></span>
   <button id="reset" type="button">reset view</button>
+  <!-- The geometry switch comes first, and before the two overlay switches:
+       it decides what the shapes on the page mean, where metro areas and
+       city limits only draw lines on top of them. -->
+  <button id="undeform" class="sw" type="button" role="switch"
+    aria-checked="false" title="turn the cartogram off and draw every tile on
+    the ground it actually occupies"
+    ><span class="tr"><span class="kn"></span></span>ordinary map</button>
   <button id="metros" class="sw" type="button" role="switch"
     aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>metro areas</button>
   <button id="limits" class="sw" type="button" role="switch"
     aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>city limits</button>
-  <button id="undeform" class="sw" type="button" role="switch"
-    aria-checked="false" title="draw every tile on the ground it actually
-    occupies, with no cartogram at all"
-    ><span class="tr"><span class="kn"></span></span>real ground</button>
   <button id="theme" type="button" title="light, dark, or whatever this
     machine is set to">theme: system</button>
   <span class="sp"></span><a href="../index.html">&larr; the whole country</a><a href="land_value_cartogram_new-york.html">New York &rarr;</a><a href="land_value_cartogram_los-angeles.html">Los Angeles &rarr;</a><a href="land_value_cartogram_chicago.html">Chicago &rarr;</a><a href="land_value_cartogram_san-francisco.html">San Francisco &rarr;</a><a href="land_value_cartogram_miami.html">Miami &rarr;</a>
@@ -947,10 +950,10 @@ function applyView() {
   reflow(GEOM);
   const note=document.getElementById('areanote');
   if(note) note.textContent = GEOM===2
-    ? 'Area is real ground. Nothing is distorted here, so area carries no '
-      + 'meaning and the colour does all the work.'
-    : 'Area is land value. Every tile is the same patch of real ground, '
-      + 'drawn at its share of the money.';
+    ? 'Ordinary map: area is real ground. Nothing is distorted here, so '
+      + 'area carries no meaning and the colour does all the work.'
+    : 'Cartogram: area is land value. Every tile is the same patch of real '
+      + 'ground, drawn at its share of the money.';
   hud.textContent=view.k.toFixed(1)+'x';
 }
 

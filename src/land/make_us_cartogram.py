@@ -2351,10 +2351,13 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
               f"measured in years. {len(draw):,d} tiles covering "
               f"{_esc(r['where'])}, holding {money} of land value."
               if r["flat"] else
-              f"Every square is the same {side:.2f} km of real ground. Its "
-              f"size on the page is its share of the {money} of "
-              f"{_esc(r['quantity'])} in {_esc(r['where'])}. {len(draw):,d} "
-              f"tiles." + (" The colour is one number: what the land in that "
+              f"This is a cartogram: a map that sizes each place by a "
+              f"number rather than by its area. Every square is the same "
+              f"{side:.2f} km of real ground, drawn at its share of the "
+              f"{money} of {_esc(r['quantity'])} in {_esc(r['where'])}, so "
+              f"dear ground swells and cheap ground shrinks to a thread. "
+              f"{len(draw):,d} tiles. The <b>ordinary map</b> switch puts "
+              f"every tile back on the ground it occupies." + (" The colour is one number: what the land in that "
                            "square is worth, divided by the output produced on "
                            "it in a year &mdash; a price-to-earnings ratio for "
                            "the ground, measured in years."
@@ -2970,16 +2973,19 @@ value.</p>
       aria-expanded="false" aria-autocomplete="list" aria-controls="hits"
     ><ul id="hits" role="listbox" hidden></ul></span>
   <button id="reset" type="button">reset view</button>
+  <!-- The geometry switch comes first, and before the two overlay switches:
+       it decides what the shapes on the page mean, where metro areas and
+       city limits only draw lines on top of them. -->
+  <button id="undeform" class="sw" type="button" role="switch"
+    aria-checked="false" title="turn the cartogram off and draw every tile on
+    the ground it actually occupies"
+    ><span class="tr"><span class="kn"></span></span>ordinary map</button>
   <button id="metros" class="sw" type="button" role="switch"
     aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>metro areas</button>
   <button id="limits" class="sw" type="button" role="switch"
     aria-checked="false"
     ><span class="tr"><span class="kn"></span></span>city limits</button>
-  <button id="undeform" class="sw" type="button" role="switch"
-    aria-checked="false" title="draw every tile on the ground it actually
-    occupies, with no cartogram at all"
-    ><span class="tr"><span class="kn"></span></span>real ground</button>
   <button id="theme" type="button" title="light, dark, or whatever this
     machine is set to">theme: system</button>
   {nav}
@@ -3404,10 +3410,10 @@ function applyView() {{
   reflow(GEOM);
   const note=document.getElementById('areanote');
   if(note) note.textContent = GEOM===2
-    ? 'Area is real ground. Nothing is distorted here, so area carries no '
-      + 'meaning and the colour does all the work.'
-    : 'Area is land value. Every tile is the same patch of real ground, '
-      + 'drawn at its share of the money.';
+    ? 'Ordinary map: area is real ground. Nothing is distorted here, so '
+      + 'area carries no meaning and the colour does all the work.'
+    : 'Cartogram: area is land value. Every tile is the same patch of real '
+      + 'ground, drawn at its share of the money.';
   hud.textContent=view.k.toFixed(1)+'x';
 }}
 
