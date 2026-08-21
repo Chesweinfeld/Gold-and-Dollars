@@ -179,8 +179,8 @@ price distribution, so the ratio understates how dear the most expensive ground
 really is. This is a comparison of two maps, not a measured statistic."""
 
 _TAIL = """ The source covers the conterminous states only; Alaska and Hawaii
-are absent. A cartogram equalises density approximately. Each build checks
-this one against every tile&rsquo;s share of the total."""
+are absent. A cartogram equalises density only approximately, and each build
+checks this one against every tile&rsquo;s share of the total."""
 
 # Named cuts.  The national maps trade resolution for extent; the metro cuts
 # run at 480 m, which is where "parcel level" stops being a figure of speech --
@@ -355,22 +355,18 @@ _SRC_NAMES = (f"Cities: Census metropolitan areas over {MIN_METRO:,.0f} "
 
 _SRC_LIMITS = ('Town lines: Census incorporated places, county subdivisions '
                'and census designated places, 2023 boundaries at 1:500,000. '
-               'A <b>heavier</b> line is a government: a city, a village, or '
-               'one of the towns and townships that govern in twenty states. '
-               'That second file draws the towns of New England and New York '
+               'A <b>heavier</b> line is a government &mdash; a city, a '
+               'village, or one of the towns and townships that govern in '
+               'twenty states, which is what draws New England, New York, '
                'and the townships of New Jersey, Pennsylvania and the '
-               'Midwest. A <b>lighter</b> line is a census designated place, '
-               'which the Census draws around a settlement in order to count '
-               'it. No government sits inside one, and most of Long Island '
-               'is one. Statistical townships, in the thirty states where a '
-               'township governs nothing, are not drawn.')
-_SRC_POP = ('Residents: the 2020 Census, counted by census block, which is '
-            'the finest unit the count is published for. The median occupied '
-            'block is 0.031 km&sup2;, seven times smaller than a 480 m tile. '
-            'Shown per tile on hover.')
-_SRC_HOODS = ('Neighbourhoods: OpenStreetMap contributors, '
-              '<a href="https://www.openstreetmap.org/copyright">ODbL</a>. '
-              'No official dataset of American neighbourhoods exists. These '
+               'Midwest. A <b>lighter</b> line is a census designated place: '
+               'a settlement the Census outlines in order to count it, with '
+               'no government inside. Most of Long Island is one. '
+               'Statistical townships, in the thirty states where a township '
+               'governs nothing, are not drawn.')
+_SRC_HOODS = ('Neighbourhoods: OpenStreetMap contributors '
+              '(<a href="https://www.openstreetmap.org/copyright">ODbL</a>). '
+              'No official dataset of American neighbourhoods exists; these '
               'are the names residents have recorded.')
 
 PROVENANCE = {
@@ -393,11 +389,11 @@ def main(argv):
     geo["clip"] = r["clip"]
     if r["clip"] is not None:
         value, real = clip_tiles(value, real, geo)
-    # The per-resident view is a recolouring of this same map, so it is only
-    # offered where the colour is a price: not on the output map, and not on
-    # the ratio maps, which are already a comparison of two quantities.
-    people = (pop_tiles(geo, r["block"])
-              if r["src"] == "land" and not r["diverge"] else None)
+    # No resident count is read from the lattice any more.  The per-resident
+    # colouring is gone, and the hover count that outlived it was a number
+    # the page carried a megabyte for and never explained.  pop_tiles() and
+    # build_us_population.py stay: the grid is right, and it is what any
+    # future per-resident work would start from.
     lattice, tiles, quads = build_mesh(value)
     extent, field = ((None, None) if r["flat"]
                      else solver_field(value, geo, r["nx"]))
@@ -452,20 +448,15 @@ def main(argv):
              else cached(key, r, field, extent, pts, quads,
                          value.ravel()[tiles]))
 
-    # The second cartogram: area is people.
-    #
-    # Not area is price-per-resident.  A ratio is an attribute of a place, not
-    # a quantity to be summed, so there is nothing for a cartogram to encode
-    # in its area -- the same reason land_vs_output_map_us is drawn on equal
-    # The third geometry costs no solve at all: it is where the ground
-    # actually is, which is what `pts` already holds before any flow touched
-    # them.  A reader who wants to know whether a place is big because it is
-    # dear or big because it is big has nowhere else to look.
+    # The second geometry, and the only other one left: where the ground
+    # actually is.  It costs no solve, because `pts` already holds it from
+    # before any flow touched them.  A reader who wants to know whether a
+    # place is big because it is dear or big because it is big has nowhere
+    # else to look.
     moved3 = None if r["flat"] else pts
     render(key, r, value, geo, tiles, quads, moved, len(lattice),
            bidx, postal, names, lab0, real.ravel()[tiles], midx=midx,
            widx=widx, pidx=pidx, n_town=n_town,
-           people=(None if people is None else people.ravel()[tiles]),
            moved3=moved3, pkind=pkind, pname=pname,
            mgeo=(mshapes.GEOID.tolist() if mshapes is not None else []))
     return 0
@@ -1681,7 +1672,7 @@ def _named_boxes(mbox, mgeo):
 
 def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
            lab0, real, tile_value, areas, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None, people=None, moved3=None,
+           pidx=(), n_town=None, moved3=None,
            pkind=(), pname=()):
     """Everything both pages need: the drawing box, the colours, the payload.
 
@@ -1775,15 +1766,6 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
     vq = np.clip(np.round((np.log10(np.maximum(tile_value, 1.0)) - 3) * 4096),
                  0, 65535).astype("<u2")
 
-    # The second colouring: the same price, per resident of the same tile.
-    # Nothing about the geometry changes -- area is still land value -- so
-    # this is one more byte per tile and a switch, not another map.
-    # A tile's own resident count, which the tooltip reports.  It is a
-    # count and not a ratio: how many people live on this square, with
-    # nothing divided by anything.
-    pop16 = (None if people is None
-             else np.round(people).astype("<u4"))
-
     # Only the real tiles are shipped; the floor tiles did their work in the
     # flow and have no business in the picture.
     draw = np.nonzero(real & (areas > 0))[0]
@@ -1792,8 +1774,6 @@ def _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal, city_name,
         "quads": quads[draw].astype("<u4").tobytes(),
         "u": u[draw].tobytes(), "val": vq[draw].tobytes(),
     }
-    if pop16 is not None:
-        blobs["pop"] = pop16[draw].tobytes()
     for tag, mv in (("3", moved3),):
         if mv is None:
             continue
@@ -2221,7 +2201,7 @@ def still(path, px, quads, u, W, H):
 
 def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
            postal, city_name, lab0, real, midx=(), widx=(), mgeo=(),
-           pidx=(), n_town=None, people=None, moved3=None,
+           pidx=(), n_town=None, moved3=None,
            pkind=(), pname=()):
     FIG.mkdir(parents=True, exist_ok=True)
     tile_value = value.ravel()[tiles]
@@ -2254,7 +2234,7 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
     s = _scene(r, geo, tiles, quads, moved, n_lattice, bidx, postal,
                city_name, lab0, real, tile_value, areas, midx=midx,
                widx=widx, mgeo=mgeo, pidx=pidx, n_town=n_town,
-               people=people, moved3=moved3,
+               moved3=moved3,
                pkind=pkind, pname=pname)
     W, H = s["W"], s["H"]
     base, span, lo, hi = s["base"], s["span"], s["lo"], s["hi"]
@@ -2341,27 +2321,28 @@ def render(key, r, value, geo, tiles, quads, moved, n_lattice, bidx,
         W=f"{W:.0f}", H=f"{H:.0f}", maxk=f"{MAX_ZOOM:.0f}",
         title=_esc(r["title"]), where=_esc(r["where"]),
         provenance=(PROVENANCE["ratio" if r["diverge"] else r["src"]]
-                    + (" " + _SRC_POP if s["towns"] else "")
                     + (" " + _SRC_LIMITS if s["munis"] else "")
                     + (" " + _SRC_HOODS if s["hoods"] else "")),
+        # Short, and it earns every clause: what a cartogram is, what one
+        # square is, how many there are.  The sources used to run on in this
+        # same paragraph and pushed the map below the fold; they are now
+        # under the map, where a reader who wants them will look for them.
         lede=(f"Every square is the same {side:.2f} km of real ground, drawn "
-              f"where it actually is. The colour is one number: what the land "
-              f"in that square is worth, divided by the output produced on it "
-              f"in a year &mdash; a price-to-earnings ratio for the ground, "
-              f"measured in years. {len(draw):,d} tiles covering "
-              f"{_esc(r['where'])}, holding {money} of land value."
+              f"where it is. The colour is the land&rsquo;s price divided by "
+              f"the output produced on it in a year: a price-to-earnings "
+              f"ratio for the ground, in years. {len(draw):,d} tiles over "
+              f"{_esc(r['where'])}, holding {money} of land."
               if r["flat"] else
-              f"This is a cartogram: a map that sizes each place by a "
-              f"number rather than by its area. Every square is the same "
-              f"{side:.2f} km of real ground, drawn at its share of the "
-              f"{money} of {_esc(r['quantity'])} in {_esc(r['where'])}, so "
-              f"dear ground swells and cheap ground shrinks to a thread. "
-              f"{len(draw):,d} tiles. The <b>ordinary map</b> switch puts "
-              f"every tile back on the ground it occupies." + (" The colour is one number: what the land in that "
-                           "square is worth, divided by the output produced on "
-                           "it in a year &mdash; a price-to-earnings ratio for "
-                           "the ground, measured in years."
-                           if r["diverge"] else "")),
+              f"A cartogram sizes each place by a number instead of by its "
+              f"area. Every square here is the same {side:.2f} km of real "
+              f"ground, drawn at its share of the {money} of "
+              f"{_esc(r['quantity'])} in {_esc(r['where'])}, so dear ground "
+              f"swells and cheap ground shrinks to a thread. "
+              f"{len(draw):,d} tiles; scroll to zoom, hover for a value."
+              + (" The colour is the land&rsquo;s price divided by the output "
+                 "produced on it in a year: a price-to-earnings ratio for the "
+                 "ground, in years."
+                 if r["diverge"] else "")),
         n=len(draw),
         km2=f"{side*side:.6f}",
         metros=json.dumps(s["metros"]), waters=json.dumps(s["waters"]),
@@ -2473,9 +2454,6 @@ function darkNow() {{
   return t ? t === 'dark' : mq.matches;
 }}
 function RAMP() {{ return darkNow() ? RAMP_DARK : RAMP_LIGHT; }}
-// `force` is the per-resident colouring asking for the grey even on a page
-// whose own scale has no sentinel: the two colourings do not have the same
-// gaps, so they do not have the same legend.
 function NOVAL() {{ return darkNow() ? NOVAL_DARK : NOVAL_LIGHT; }}
 // Applied here rather than with the rest of the theme wiring at the foot of
 // the file, because the tiles are coloured on load: read the preference late
@@ -2604,13 +2582,12 @@ const uK=gl.getUniformLocation(prog,'u_k'), uO=gl.getUniformLocation(prog,'u_o')
 const uPick=gl.getUniformLocation(prog,'u_pick');
 
 let view={{k:1,ox:0,oy:0}}, count=0, ready=false, fb=null, ftex=null;
-let TVAL=null, TU=null, TGDP=null, TPOP=null;
+let TVAL=null, TU=null, TGDP=null;
 
 (async function build() {{
   const [vxb, vyb, qb, bb, vb] = await Promise.all(
     [D.vx, D.vy, D.quads, D.u, D.val].map(unz));
   if (D.val2) TGDP = new Uint16Array((await unz(D.val2)).buffer);
-  if (D.pop) TPOP = new Uint32Array((await unz(D.pop)).buffer);
   const vx=new Uint16Array(vxb.buffer), vy=new Uint16Array(vyb.buffer);
   const quads=new Uint32Array(qb.buffer);
   TU=bb; TVAL=new Uint16Array(vb.buffer);
@@ -2678,7 +2655,8 @@ let TVAL=null, TU=null, TGDP=null, TPOP=null;
   // Switching flows rewrites the positions and nothing else: same tiles, same
   // indices, same colour buffer.  The vertices are the only thing that is a
   // property of which cartogram is being drawn.
-  // 0 the price cartogram, 1 the per-resident one, 2 the ground undeformed.
+  // 0 the price cartogram, 2 the ground undeformed.  1 was the per-resident
+  // cartogram, and the slot is left empty rather than renumbered.
   reflow=(g)=>{{
     const ax=(g===2&&vx3)?vx3:(g===1&&vx2)?vx2:vx;
     const ay=(g===2&&vy3)?vy3:(g===1&&vy2)?vy2:vy;
@@ -2953,29 +2931,22 @@ a.home:hover {{ color:var(--ink); }}
 </style>
 <div class="wrap">
 <h1>{home}{title}</h1>
-<p class="sub">{lede} {provenance} Scroll to zoom, drag to pan, hover for a
-value.</p>
-<div id="stage">
-  <canvas id="cv"></canvas>
-  <svg class="ov" id="ov" viewBox="0 0 {W} {H}" preserveAspectRatio="none">
-    <g id="sc"><g id="wt"></g><g id="pb"></g><g id="mb"></g><g id="bd"></g
-      ><g id="lb"></g><g id="nh"></g><g id="tw"></g></g>
-  </svg>
-  <div id="tip"></div>
-  <div id="hud">1.0x</div>
-</div>
-<!-- The controls sit outside the map rather than on top of it.  Inside, every
-     press first reached the pan/zoom surface, which captured the pointer and
-     took the click with it; outside, a button is just a button. -->
+<p class="sub">{lede}</p>
+<!-- The controls sit above the map, directly under the sentence that says
+     what a cartogram is: the switch that turns the deformation off is the
+     answer to the question that sentence raises, and a reader should not
+     have to scroll past the map to find it.  They stay outside the canvas,
+     where a press used to reach the pan/zoom surface first and be swallowed
+     by it. -->
 <div class="ctl">
   <span class="find"><input id="find" type="search" autocomplete="off"
       spellcheck="false" placeholder="find a place" role="combobox"
       aria-expanded="false" aria-autocomplete="list" aria-controls="hits"
     ><ul id="hits" role="listbox" hidden></ul></span>
   <button id="reset" type="button">reset view</button>
-  <!-- The geometry switch comes first, and before the two overlay switches:
-       it decides what the shapes on the page mean, where metro areas and
-       city limits only draw lines on top of them. -->
+  <!-- The geometry switch comes before the two overlay switches: it decides
+       what the shapes on the page mean, where metro areas and city limits
+       only draw lines on top of them. -->
   <button id="undeform" class="sw" type="button" role="switch"
     aria-checked="false" title="turn the cartogram off and draw every tile on
     the ground it actually occupies"
@@ -2990,10 +2961,19 @@ value.</p>
     machine is set to">theme: system</button>
   {nav}
 </div>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <svg class="ov" id="ov" viewBox="0 0 {W} {H}" preserveAspectRatio="none">
+    <g id="sc"><g id="wt"></g><g id="pb"></g><g id="mb"></g><g id="bd"></g
+      ><g id="lb"></g><g id="nh"></g><g id="tw"></g></g>
+  </svg>
+  <div id="tip"></div>
+  <div id="hud">1.0x</div>
+</div>
 <p class="cap" id="areanote" style="margin:10px 0 0"></p>
 <div class="legend">{legend}</div>
 <p class="notes"><b>What the colour says.</b> {colour}<br><br>
-{notes}</p>
+{notes}<br><br><b>Sources.</b> {provenance}</p>
 </div>
 <script>
 """ + _GL_JS + """
@@ -3209,9 +3189,7 @@ stage.addEventListener('pointermove',e=>{{
            `output is known only by county, so no ratio is drawn</span>`);
   }} else {{
     tip.innerHTML=`<b>${{money(v)}}</b> {noun}<br>`+
-      `<span style="color:var(--muted)">${{money(v/KM2)}} per km&sup2;</span>`
-      + (TPOP ? `<br><span style="color:var(--muted)">`+
-         `${{TPOP[t].toLocaleString()}} resident${{TPOP[t]===1?'':'s'}}</span>` : '');
+      `<span style="color:var(--muted)">${{money(v/KM2)}} per km&sup2;</span>`;
   }}
   tip.style.opacity=1;
   const tw=tip.offsetWidth, th=tip.offsetHeight;
