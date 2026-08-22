@@ -58,17 +58,7 @@ body { margin:0; background:var(--bg); color:var(--ink);
 .wrap { max-width:1180px; margin:0 auto; padding:28px 20px 56px; }
 h1 { font-size:26px; margin:0 0 6px; letter-spacing:-0.01em; }
 p.sub { margin:0 0 18px; color:var(--muted); max-width:70ch; }
-/* The map is drawn at whatever shape its ground is, and a metro's ground can
-   be tall: Los Angeles runs 229 km north to south against 133 km across, so a
-   full-width frame at that ratio stands 1,900 px high and the reader meets the
-   top third of a map and no way of knowing there is more.  The width is
-   therefore taken from the height that is left on the screen, and the frame
-   keeps its ratio rather than stretching to fill -- a cartogram stretched is a
-   cartogram lying.  min() takes the container's width when that is the tighter
-   of the two, which is what happens on a phone and on the wide national map;
-   the 340 px floor is for a window too short for either to be much use. */
-#stage { position:relative; aspect-ratio:2000 / 1562; margin:0 auto;
-  width:min(100%, max(300px, calc((100vh - 240px) * 2000 / 1562)));
+#stage { position:relative; width:100%; aspect-ratio:2000 / 1562;
   border:1px solid var(--line); border-radius:10px; overflow:hidden;
   background:var(--mapbg); touch-action:none; cursor:grab; }
 #stage.drag { cursor:grabbing; }
@@ -295,6 +285,11 @@ checks this one against every tile&rsquo;s share of the total.<br><br><b>Sources
 </div>
 <script>
 const W=2000, H=1562, NT=164063, KM2=0.230400, BASE=1, MAXK=400;
+// k=1 is the whole map at the width of the frame.  Below it the map is
+// drawn smaller than its frame, which is the only way to see a tall cut
+// -- Los Angeles is 1.7 times as high as it is wide -- without scrolling
+// the page to follow it.
+const MINK=0.2;
 const RAMP_LIGHT=["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"], RAMP_DARK=["#16222f", "#1b3b58", "#1f5685", "#2374b5", "#3f97d8", "#79bef0", "#c2e2ff"];
 const NOVAL_LIGHT=null, NOVAL_DARK=null;
 // Which scale is in force is a function of the theme, and the theme can
@@ -705,7 +700,7 @@ const span=()=>{
           cx:(a.x+b.x)/2, cy:(a.y+b.y)/2};
 };
 function zoomAbout(k,mx,my) {
-  k=Math.min(Math.max(k,1),MAXK);
+  k=Math.min(Math.max(k,MINK),MAXK);
   const g=k/view.k;
   view.ox=mx-(mx-view.ox)*g; view.oy=my-(my-view.oy)*g;
   view.k=k; clampView(); draw();
@@ -779,7 +774,7 @@ stage.addEventListener('wheel',e=>{
   const r=stage.getBoundingClientRect(), s=W/r.width;
   const mx=(e.clientX-r.left)*s, my=(e.clientY-r.top)*s;
   const f=Math.exp(-e.deltaY*0.0015);
-  const k=Math.min(Math.max(view.k*f,1),MAXK);
+  const k=Math.min(Math.max(view.k*f,MINK),MAXK);
   const g=k/view.k;
   view.ox=mx-(mx-view.ox)*g; view.oy=my-(my-view.oy)*g;
   view.k=k; clampView(); draw();
@@ -787,8 +782,16 @@ stage.addEventListener('wheel',e=>{
 function clampView() {
   if(!isFinite(view.ox)) view.ox=0;
   if(!isFinite(view.oy)) view.oy=0;
-  view.ox=Math.min(0,Math.max(W-W*view.k,view.ox));
-  view.oy=Math.min(0,Math.max(H-H*view.k,view.oy));
+  // Zoomed in, the frame stays covered: the edge of the map cannot be
+  // dragged into the middle of it.  Zoomed out past the fit there is no edge
+  // to hold, so the map is centred in the frame instead of pinned to a corner.
+  // Centred across, but held against the top rather than the middle: on a
+  // tall cut the frame is taller than the window, so a map centred in it
+  // would be zoomed out to somewhere the reader cannot see without scrolling
+  // the page after it.  At the top it is where they are already looking.
+  const fw=W*view.k, fh=H*view.k;
+  view.ox = fw<=W ? (W-fw)/2 : Math.min(0,Math.max(W-fw,view.ox));
+  view.oy = fh<=H ? 0 : Math.min(0,Math.max(H-fh,view.oy));
 }
 document.getElementById('reset').onclick=()=>{
   view={k:1,ox:0,oy:0}; draw();
