@@ -58,7 +58,17 @@ body { margin:0; background:var(--bg); color:var(--ink);
 .wrap { max-width:1180px; margin:0 auto; padding:28px 20px 56px; }
 h1 { font-size:26px; margin:0 0 6px; letter-spacing:-0.01em; }
 p.sub { margin:0 0 18px; color:var(--muted); max-width:70ch; }
-#stage { position:relative; width:100%; aspect-ratio:2000 / 1617;
+/* The map is drawn at whatever shape its ground is, and a metro's ground can
+   be tall: Los Angeles runs 229 km north to south against 133 km across, so a
+   full-width frame at that ratio stands 1,900 px high and the reader meets the
+   top third of a map and no way of knowing there is more.  The width is
+   therefore taken from the height that is left on the screen, and the frame
+   keeps its ratio rather than stretching to fill -- a cartogram stretched is a
+   cartogram lying.  min() takes the container's width when that is the tighter
+   of the two, which is what happens on a phone and on the wide national map;
+   the 340 px floor is for a window too short for either to be much use. */
+#stage { position:relative; aspect-ratio:2000 / 1617; margin:0 auto;
+  width:min(100%, max(300px, calc((100vh - 240px) * 2000 / 1617)));
   border:1px solid var(--line); border-radius:10px; overflow:hidden;
   background:var(--mapbg); touch-action:none; cursor:grab; }
 #stage.drag { cursor:grabbing; }
