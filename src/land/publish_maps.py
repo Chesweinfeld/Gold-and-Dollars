@@ -10,7 +10,14 @@ one metro gets missed, or the national map is copied and the cuts it links to
 are not, and the page 404s for exactly the reader who clicked the link.  So it
 is a script, and it copies the whole set or none of it.
 
-    python3 src/land/publish_maps.py ../american-land
+    python3 src/land/publish_maps.py                 # ~/Desktop/american-land
+    python3 src/land/publish_maps.py <path>          # or say where
+
+The checkout used to sit in a session scratchpad under /private/tmp, which is
+swept: it lost .git/HEAD mid-session and every git command in it failed until
+the file was written back by hand.  It lives on the Desktop now, and the
+default below is that path, so a rebuild cannot quietly publish into a copy
+that is about to be deleted.
 
 It only copies.  Committing and pushing stay manual, because publishing is a
 decision and should be made by a person.
@@ -20,6 +27,7 @@ import shutil
 import sys
 from pathlib import Path
 
+SITE = Path("~/Desktop/american-land")
 ROOT = Path(__file__).resolve().parents[2]
 FIG = ROOT / "docs" / "figures"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -27,9 +35,7 @@ from make_us_cartogram import cut_slugs      # noqa: E402
 
 
 def main(argv):
-    if len(argv) < 2:
-        raise SystemExit(__doc__)
-    site = Path(argv[1]).expanduser().resolve()
+    site = Path(argv[1] if len(argv) > 1 else SITE).expanduser().resolve()
     if not (site / ".git").is_dir():
         raise SystemExit(f"{site} is not a git repository")
     (site / "figures").mkdir(parents=True, exist_ok=True)
